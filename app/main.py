@@ -91,14 +91,14 @@ async def add_visited(restaurant: RestaurantPayload):
     return get_lists()
 
 
-@app.delete("/api/lists/want/{osm_id}")
+@app.delete("/api/lists/want/{osm_id:path}")
 async def delete_want(osm_id: str):
     if not remove_place(osm_id, "want"):
         raise HTTPException(status_code=404, detail="Restaurant not found in want list.")
     return get_lists()
 
 
-@app.delete("/api/lists/visited/{osm_id}")
+@app.delete("/api/lists/visited/{osm_id:path}")
 async def delete_visited(osm_id: str):
     if not remove_place(osm_id, "visited"):
         raise HTTPException(status_code=404, detail="Restaurant not found in visited list.")

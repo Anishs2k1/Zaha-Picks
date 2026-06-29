@@ -10,6 +10,10 @@ const visitedList = document.getElementById("visited-list");
 const wantCount = document.getElementById("want-count");
 const visitedCount = document.getElementById("visited-count");
 
+const EMPTY_WANT_MESSAGE = "No restaurants saved yet. Add some from the home page.";
+const EMPTY_VISITED_MESSAGE =
+  "Mark restaurants as visited while browsing on the home page.";
+
 function initMap() {
   map = L.map("map", {
     zoomControl: true,
@@ -24,19 +28,25 @@ function initMap() {
   }).addTo(map);
 }
 
+function formatCuisine(cuisine) {
+  return (cuisine || "Unspecified").replace(/;/g, ", ");
+}
+
 function renderList(container, items, emptyMessage, listType) {
-  if (items.length === 0) {
+  const safeItems = Array.isArray(items) ? items : [];
+
+  if (safeItems.length === 0) {
     container.innerHTML = `<li class="empty-state">${emptyMessage}</li>`;
     return;
   }
 
-  container.innerHTML = items
+  container.innerHTML = safeItems
     .map(
       (place) => `
       <li class="saved-list-item" data-id="${place.id}" data-list="${listType}">
         <div class="saved-list-content">
           <p class="restaurant-name">${place.name}</p>
-          <p class="restaurant-detail">${place.cuisine.replace(/;/g, ", ")}</p>
+          <p class="restaurant-detail">${formatCuisine(place.cuisine)}</p>
           <p class="restaurant-detail">${place.address || "Address not listed"}</p>
         </div>
         <button type="button" class="btn-remove" data-id="${place.id}" data-list="${listType}" aria-label="Remove ${place.name}">
@@ -50,7 +60,7 @@ function renderList(container, items, emptyMessage, listType) {
   container.querySelectorAll(".saved-list-item").forEach((item) => {
     item.addEventListener("click", (event) => {
       if (event.target.classList.contains("btn-remove")) return;
-      const place = items.find((entry) => entry.id === item.dataset.id);
+      const place = safeItems.find((entry) => entry.id === item.dataset.id);
       if (place) {
         map.panTo([place.lat, place.lng], { animate: true });
         map.setZoom(Math.max(map.getZoom(), 15));
@@ -75,9 +85,12 @@ function renderList(container, items, emptyMessage, listType) {
   });
 }
 
-function fitMapToSavedPlaces(wantToVisit, visited) {
+function fitMapToSavedPlaces(lists) {
+  const wantToVisit = Array.isArray(lists.wantToVisit) ? lists.wantToVisit : [];
+  const visited = Array.isArray(lists.visited) ? lists.visited : [];
   const all = [...wantToVisit, ...visited];
-  window.ZahaSavedMarkers.renderSavedMarkers(map);
+
+  window.ZahaSavedMarkers.renderSavedMarkers(map, { wantToVisit, visited });
 
   if (all.length === 0) {
     map.setView(FALLBACK_CENTER, 13);
@@ -94,36 +107,23 @@ function fitMapToSavedPlaces(wantToVisit, visited) {
 }
 
 async function refreshPage() {
-  const { wantToVisit, visited } = await window.ZahaLists.loadLists();
+  const lists = await window.ZahaLists.loadLists();
+  const wantToVisit = lists.wantToVisit || [];
+  const visited = lists.visited || [];
+
   wantCount.textContent = String(wantToVisit.length);
   visitedCount.textContent = String(visited.length);
 
-  renderList(
-    wantList,
-    wantToVisit,
-    "No restaurants saved yet. Add some from the home page.",
-    "want"
-  );
-  renderList(
-    visitedList,
-    visited,
-    "Mark restaurants as visited while browsing on the home page.",
-    "visited"
-  );
-
-  fitMapToSavedPlaces(wantToVisit, visited);
+  renderList(wantList, wantToVisit, EMPTY_WANT_MESSAGE, "want");
+  renderList(visitedList, visited, EMPTY_VISITED_MESSAGE, "visited");
+  fitMapToSavedPlaces({ wantToVisit, visited });
 }
 
 initMap();
 
 (async function bootstrap() {
-  try {
-    await window.ZahaLists.ensureReady();
-    await refreshPage();
-  } catch (error) {
-    wantList.innerHTML = `<li class="empty-state">${error.message || "Could not load saved lists."}</li>`;
-    visitedList.innerHTML = `<li class="empty-state">${error.message || "Could not load saved lists."}</li>`;
-  }
+  await window.ZahaLists.ensureReady();
+  await refreshPage();
 })();
 
 window.addEventListener("zaha-lists-updated", () => {

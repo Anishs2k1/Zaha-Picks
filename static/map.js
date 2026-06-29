@@ -103,7 +103,7 @@ function renderMapMarkers() {
     restaurantMarkers.push(marker);
   });
 
-  window.ZahaSavedMarkers.renderSavedMarkers(map);
+  window.ZahaSavedMarkers.renderSavedMarkers(map, window.ZahaLists.getCachedLists());
 }
 
 function renderRestaurantList(scrollIntoView = false) {
@@ -226,10 +226,10 @@ async function handleWantToVisit() {
   try {
     await window.ZahaLists.addWantToVisit(state.selected);
     updateSaveButtons(state.selected);
-    window.ZahaSavedMarkers.renderSavedMarkers(map);
+    window.ZahaSavedMarkers.renderSavedMarkers(map, window.ZahaLists.getCachedLists());
     setStatus(`Added ${state.selected.name} to Want to visit.`);
   } catch (error) {
-    setStatus(error.message || "Could not save restaurant.");
+    console.error(error);
   }
 }
 
@@ -238,10 +238,10 @@ async function handleMarkVisited() {
   try {
     await window.ZahaLists.addVisited(state.selected);
     updateSaveButtons(state.selected);
-    window.ZahaSavedMarkers.renderSavedMarkers(map);
+    window.ZahaSavedMarkers.renderSavedMarkers(map, window.ZahaLists.getCachedLists());
     setStatus(`Marked ${state.selected.name} as visited.`);
   } catch (error) {
-    setStatus(error.message || "Could not save restaurant.");
+    console.error(error);
   }
 }
 
@@ -436,7 +436,7 @@ function bindControls() {
   btnMarkVisited.addEventListener("click", handleMarkVisited);
 
   window.addEventListener("zaha-lists-updated", () => {
-    window.ZahaSavedMarkers.renderSavedMarkers(map);
+    window.ZahaSavedMarkers.renderSavedMarkers(map, window.ZahaLists.getCachedLists());
     if (state.selected) updateSaveButtons(state.selected);
   });
 }
@@ -445,11 +445,7 @@ initMap();
 bindControls();
 
 (async function bootstrap() {
-  try {
-    await window.ZahaLists.ensureReady();
-    window.ZahaSavedMarkers.renderSavedMarkers(map);
-  } catch (error) {
-    setStatus(error.message || "Could not load saved lists.");
-  }
+  await window.ZahaLists.ensureReady();
+  window.ZahaSavedMarkers.renderSavedMarkers(map, window.ZahaLists.getCachedLists());
   locateUser();
 })();

@@ -14,11 +14,19 @@ function createStarIcon() {
   });
 }
 
-function renderSavedMarkers(map) {
-  if (!map || !window.ZahaLists) return;
+function renderSavedMarkers(map, lists) {
+  if (!map) return;
 
   clearSavedMarkers();
-  const { wantToVisit, visited } = window.ZahaLists.loadLists();
+
+  const source =
+    lists ||
+    (window.ZahaLists && typeof window.ZahaLists.getCachedLists === "function"
+      ? window.ZahaLists.getCachedLists()
+      : { wantToVisit: [], visited: [] });
+
+  const wantToVisit = Array.isArray(source.wantToVisit) ? source.wantToVisit : [];
+  const visited = Array.isArray(source.visited) ? source.visited : [];
 
   wantToVisit.forEach((place) => {
     const marker = L.marker([place.lat, place.lng], {

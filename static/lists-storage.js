@@ -7,8 +7,25 @@ function emptyLists() {
   return { wantToVisit: [], visited: [] };
 }
 
+function normalizeLists(data) {
+  if (!data || typeof data !== "object") {
+    return emptyLists();
+  }
+  return {
+    wantToVisit: Array.isArray(data.wantToVisit) ? data.wantToVisit : [],
+    visited: Array.isArray(data.visited) ? data.visited : [],
+  };
+}
+
 function dispatchUpdated() {
   window.dispatchEvent(new CustomEvent("zaha-lists-updated"));
+}
+
+function getCachedLists() {
+  return {
+    wantToVisit: [...cache.wantToVisit],
+    visited: [...cache.visited],
+  };
 }
 
 function placePayload(place) {
@@ -28,13 +45,21 @@ function placePayload(place) {
   };
 }
 
+async function readListsResponse(response) {
+  if (!response.ok) {
+    throw new Error(`Lists API returned ${response.status}`);
+  }
+  const payload = await response.json();
+  return normalizeLists(payload);
+}
+
 async function migrateLocalStorageIfNeeded() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) return;
 
   try {
     const parsed = JSON.parse(raw);
-    await fetch("/api/lists/migrate", {
+    const response = await fetch("/api/lists/migrate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -42,26 +67,31 @@ async function migrateLocalStorageIfNeeded() {
         visited: Array.isArray(parsed.visited) ? parsed.visited : [],
       }),
     });
-    localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // Keep local data if migration fails; server lists remain authoritative on next success.
+    if (response.ok) {
+      cache = await readListsResponse(response);
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  } catch (error) {
+    console.error("Zaha Picks: could not migrate saved lists.", error);
   }
 }
 
 async function fetchListsFromServer() {
   const response = await fetch("/api/lists");
-  if (!response.ok) {
-    throw new Error("Could not load saved lists.");
-  }
-  cache = await response.json();
+  cache = await readListsResponse(response);
   return cache;
 }
 
 async function ensureReady() {
   if (!readyPromise) {
     readyPromise = (async () => {
-      await migrateLocalStorageIfNeeded();
-      await fetchListsFromServer();
+      try {
+        await migrateLocalStorageIfNeeded();
+        await fetchListsFromServer();
+      } catch (error) {
+        console.error("Zaha Picks: could not load saved lists.", error);
+        cache = emptyLists();
+      }
     })();
   }
   await readyPromise;
@@ -70,14 +100,16 @@ async function ensureReady() {
 
 async function loadLists() {
   await ensureReady();
-  return {
-    wantToVisit: [...cache.wantToVisit],
-    visited: [...cache.visited],
-  };
+  return getCachedLists();
 }
 
 async function refreshLists() {
-  await fetchListsFromServer();
+  try {
+    await fetchListsFromServer();
+  } catch (error) {
+    console.error("Zaha Picks: could not refresh saved lists.", error);
+    cache = emptyLists();
+  }
   dispatchUpdated();
   return cache;
 }
@@ -88,10 +120,7 @@ async function addWantToVisit(place) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(placePayload(place)),
   });
-  if (!response.ok) {
-    throw new Error("Could not save restaurant to Want to visit.");
-  }
-  cache = await response.json();
+  cache = await readListsResponse(response);
   dispatchUpdated();
   return cache.wantToVisit.find((item) => item.id === place.id);
 }
@@ -102,10 +131,7 @@ async function addVisited(place) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(placePayload(place)),
   });
-  if (!response.ok) {
-    throw new Error("Could not save restaurant as visited.");
-  }
-  cache = await response.json();
+  cache = await readListsResponse(response);
   dispatchUpdated();
   return cache.visited.find((item) => item.id === place.id);
 }
@@ -114,10 +140,7 @@ async function removeWantToVisit(id) {
   const response = await fetch(`/api/lists/want/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
-  if (!response.ok) {
-    throw new Error("Could not remove restaurant from Want to visit.");
-  }
-  cache = await response.json();
+  cache = await readListsResponse(response);
   dispatchUpdated();
 }
 
@@ -125,10 +148,7 @@ async function removeVisited(id) {
   const response = await fetch(`/api/lists/visited/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
-  if (!response.ok) {
-    throw new Error("Could not remove restaurant from visited.");
-  }
-  cache = await response.json();
+  cache = await readListsResponse(response);
   dispatchUpdated();
 }
 
@@ -143,6 +163,7 @@ function isVisited(id) {
 window.ZahaLists = {
   loadLists,
   refreshLists,
+  getCachedLists,
   addWantToVisit,
   addVisited,
   removeWantToVisit,

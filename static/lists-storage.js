@@ -1,90 +1,153 @@
 const STORAGE_KEY = "zaha-picks-lists";
 
+let cache = { wantToVisit: [], visited: [] };
+let readyPromise = null;
+
 function emptyLists() {
   return { wantToVisit: [], visited: [] };
 }
 
-function loadLists() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return emptyLists();
-    const data = JSON.parse(raw);
-    return {
-      wantToVisit: Array.isArray(data.wantToVisit) ? data.wantToVisit : [],
-      visited: Array.isArray(data.visited) ? data.visited : [],
-    };
-  } catch {
-    return emptyLists();
-  }
-}
-
-function saveLists(data) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+function dispatchUpdated() {
   window.dispatchEvent(new CustomEvent("zaha-lists-updated"));
 }
 
-function normalizePlace(place) {
+function placePayload(place) {
   return {
     id: place.id,
     name: place.name,
     lat: place.lat,
     lng: place.lng,
-    cuisine: place.cuisine || "unspecified",
+    cuisine: place.cuisine || "",
     address: place.address || "",
-    savedAt: new Date().toISOString(),
+    tags: place.tags || null,
+    distance: place.distance ?? null,
+    distance_label: place.distance_label ?? null,
+    opening_hours: place.opening_hours ?? null,
+    yelp_url: place.yelp_url ?? null,
+    yelp_direct: place.yelp_direct ?? null,
   };
 }
 
-function addWantToVisit(place) {
-  const data = loadLists();
-  const entry = normalizePlace(place);
-  data.visited = data.visited.filter((item) => item.id !== entry.id);
-  const exists = data.wantToVisit.some((item) => item.id === entry.id);
-  if (!exists) {
-    data.wantToVisit.push(entry);
+async function migrateLocalStorageIfNeeded() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return;
+
+  try {
+    const parsed = JSON.parse(raw);
+    await fetch("/api/lists/migrate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        wantToVisit: Array.isArray(parsed.wantToVisit) ? parsed.wantToVisit : [],
+        visited: Array.isArray(parsed.visited) ? parsed.visited : [],
+      }),
+    });
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Keep local data if migration fails; server lists remain authoritative on next success.
   }
-  saveLists(data);
-  return entry;
 }
 
-function addVisited(place) {
-  const data = loadLists();
-  const entry = normalizePlace(place);
-  data.wantToVisit = data.wantToVisit.filter((item) => item.id !== entry.id);
-  const exists = data.visited.some((item) => item.id === entry.id);
-  if (!exists) {
-    data.visited.push(entry);
+async function fetchListsFromServer() {
+  const response = await fetch("/api/lists");
+  if (!response.ok) {
+    throw new Error("Could not load saved lists.");
   }
-  saveLists(data);
-  return entry;
+  cache = await response.json();
+  return cache;
 }
 
-function removeWantToVisit(id) {
-  const data = loadLists();
-  data.wantToVisit = data.wantToVisit.filter((item) => item.id !== id);
-  saveLists(data);
+async function ensureReady() {
+  if (!readyPromise) {
+    readyPromise = (async () => {
+      await migrateLocalStorageIfNeeded();
+      await fetchListsFromServer();
+    })();
+  }
+  await readyPromise;
+  return cache;
 }
 
-function removeVisited(id) {
-  const data = loadLists();
-  data.visited = data.visited.filter((item) => item.id !== id);
-  saveLists(data);
+async function loadLists() {
+  await ensureReady();
+  return {
+    wantToVisit: [...cache.wantToVisit],
+    visited: [...cache.visited],
+  };
+}
+
+async function refreshLists() {
+  await fetchListsFromServer();
+  dispatchUpdated();
+  return cache;
+}
+
+async function addWantToVisit(place) {
+  const response = await fetch("/api/lists/want", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(placePayload(place)),
+  });
+  if (!response.ok) {
+    throw new Error("Could not save restaurant to Want to visit.");
+  }
+  cache = await response.json();
+  dispatchUpdated();
+  return cache.wantToVisit.find((item) => item.id === place.id);
+}
+
+async function addVisited(place) {
+  const response = await fetch("/api/lists/visited", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(placePayload(place)),
+  });
+  if (!response.ok) {
+    throw new Error("Could not save restaurant as visited.");
+  }
+  cache = await response.json();
+  dispatchUpdated();
+  return cache.visited.find((item) => item.id === place.id);
+}
+
+async function removeWantToVisit(id) {
+  const response = await fetch(`/api/lists/want/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    throw new Error("Could not remove restaurant from Want to visit.");
+  }
+  cache = await response.json();
+  dispatchUpdated();
+}
+
+async function removeVisited(id) {
+  const response = await fetch(`/api/lists/visited/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    throw new Error("Could not remove restaurant from visited.");
+  }
+  cache = await response.json();
+  dispatchUpdated();
 }
 
 function isWantToVisit(id) {
-  return loadLists().wantToVisit.some((item) => item.id === id);
+  return cache.wantToVisit.some((item) => item.id === id);
 }
 
 function isVisited(id) {
-  return loadLists().visited.some((item) => item.id === id);
+  return cache.visited.some((item) => item.id === id);
 }
 
 window.ZahaLists = {
   loadLists,
+  refreshLists,
   addWantToVisit,
   addVisited,
   removeWantToVisit,
   removeVisited,
   isWantToVisit,
   isVisited,
+  ensureReady,
 };

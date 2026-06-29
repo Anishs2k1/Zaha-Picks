@@ -59,14 +59,18 @@ function renderList(container, items, emptyMessage, listType) {
   });
 
   container.querySelectorAll(".btn-remove").forEach((button) => {
-    button.addEventListener("click", (event) => {
+    button.addEventListener("click", async (event) => {
       event.stopPropagation();
-      if (button.dataset.list === "want") {
-        window.ZahaLists.removeWantToVisit(button.dataset.id);
-      } else {
-        window.ZahaLists.removeVisited(button.dataset.id);
+      try {
+        if (button.dataset.list === "want") {
+          await window.ZahaLists.removeWantToVisit(button.dataset.id);
+        } else {
+          await window.ZahaLists.removeVisited(button.dataset.id);
+        }
+        await refreshPage();
+      } catch (error) {
+        console.error(error);
       }
-      refreshPage();
     });
   });
 }
@@ -89,8 +93,8 @@ function fitMapToSavedPlaces(wantToVisit, visited) {
   map.fitBounds(bounds, { padding: [48, 48] });
 }
 
-function refreshPage() {
-  const { wantToVisit, visited } = window.ZahaLists.loadLists();
+async function refreshPage() {
+  const { wantToVisit, visited } = await window.ZahaLists.loadLists();
   wantCount.textContent = String(wantToVisit.length);
   visitedCount.textContent = String(visited.length);
 
@@ -111,6 +115,17 @@ function refreshPage() {
 }
 
 initMap();
-refreshPage();
 
-window.addEventListener("zaha-lists-updated", refreshPage);
+(async function bootstrap() {
+  try {
+    await window.ZahaLists.ensureReady();
+    await refreshPage();
+  } catch (error) {
+    wantList.innerHTML = `<li class="empty-state">${error.message || "Could not load saved lists."}</li>`;
+    visitedList.innerHTML = `<li class="empty-state">${error.message || "Could not load saved lists."}</li>`;
+  }
+})();
+
+window.addEventListener("zaha-lists-updated", () => {
+  refreshPage();
+});

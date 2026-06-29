@@ -5,6 +5,7 @@ from app.filters import (
     distance_meters,
     format_address,
     format_distance,
+    infer_cuisine,
     is_open_for_meal,
     matches_cuisine,
 )
@@ -24,7 +25,7 @@ def normalize_restaurant(element: dict, user_lat: float, user_lng: float) -> dic
         return None
 
     distance = distance_meters(user_lat, user_lng, lat, lng)
-    cuisine = tags.get("cuisine") or "unspecified"
+    cuisine = infer_cuisine(tags, name)
     opening_hours = tags.get("opening_hours") or tags.get("opening_hours:covid19")
     address = format_address(tags)
 

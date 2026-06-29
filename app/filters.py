@@ -95,13 +95,73 @@ def format_distance(meters: float) -> str:
 
 
 def format_address(tags: dict) -> str:
-    parts = [
-        tags.get("addr:housenumber"),
-        tags.get("addr:street"),
-        tags.get("addr:city"),
-    ]
+    if tags.get("addr:full"):
+        return tags["addr:full"].strip()
+
+    street = " ".join(
+        part
+        for part in [tags.get("addr:housenumber"), tags.get("addr:street")]
+        if part
+    )
+    city = (
+        tags.get("addr:city")
+        or tags.get("addr:town")
+        or tags.get("addr:place")
+        or tags.get("addr:suburb")
+    )
+    state = tags.get("addr:state")
+    postcode = tags.get("addr:postcode")
+
+    if street and city:
+        locality = ", ".join(part for part in [city, state, postcode] if part)
+        return f"{street}, {locality}" if locality else street
+
+    parts = [street, city, state, postcode]
     cleaned = [part for part in parts if part]
     return " ".join(cleaned) if cleaned else "Address not listed"
+
+
+def format_cuisine_label(raw: str) -> str:
+    return ", ".join(
+        segment.strip().replace("_", " ").title()
+        for segment in raw.split(";")
+        if segment.strip()
+    )
+
+
+def infer_cuisine(tags: dict, name: str, existing: str | None = None) -> str:
+    existing_value = (existing or "").strip()
+    if existing_value and existing_value.lower() not in {"unspecified", "unknown"}:
+        return format_cuisine_label(existing_value)
+
+    raw_cuisine = (tags.get("cuisine") or "").strip()
+    if raw_cuisine:
+        return format_cuisine_label(raw_cuisine)
+
+    haystack = " ".join(
+        part
+        for part in [
+            name,
+            tags.get("brand") or "",
+            tags.get("operator") or "",
+            tags.get("description") or "",
+        ]
+        if part
+    ).lower()
+
+    for label, terms in CUISINE_ALIASES.items():
+        if any(term in haystack for term in terms):
+            return label.title()
+
+    amenity = (tags.get("amenity") or "").lower()
+    if amenity == "fast_food":
+        return "Fast Food"
+    if amenity == "cafe":
+        return "Cafe"
+    if amenity == "restaurant":
+        return "Restaurant"
+
+    return "Unspecified"
 
 
 def build_yelp_url(name: str, lat: float, lng: float, tags: dict, address: str) -> str:

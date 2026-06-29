@@ -54,8 +54,6 @@ function initMap() {
     fillOpacity: 1,
     weight: 2,
   }).addTo(map);
-
-  window.ZahaSavedMarkers.renderSavedMarkers(map);
 }
 
 function setStatus(message) {
@@ -141,15 +139,77 @@ function renderRestaurantList(scrollIntoView = false) {
   }
 }
 
-function selectRestaurant(place) {
-  state.selected = place;
-  resultCard.hidden = false;
+function needsEnrichment(place) {
+  const cuisine = (place.cuisine || "").trim().toLowerCase();
+  const address = (place.address || "").trim();
+  return (
+    !address ||
+    address === "Address not listed" ||
+    !cuisine ||
+    cuisine === "unspecified"
+  );
+}
+
+async function enrichPlace(place) {
+  const response = await fetch("/api/enrich", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: place.id,
+      name: place.name,
+      lat: place.lat,
+      lng: place.lng,
+      cuisine: place.cuisine || "",
+      address: place.address || "",
+      tags: place.tags || null,
+      distance: place.distance ?? null,
+      distance_label: place.distance_label ?? null,
+      opening_hours: place.opening_hours ?? null,
+      yelp_url: place.yelp_url ?? null,
+      yelp_direct: place.yelp_direct ?? null,
+    }),
+  });
+
+  if (!response.ok) {
+    return place;
+  }
+
+  const enriched = await response.json();
+  Object.assign(place, enriched);
+
+  const index = state.restaurants.findIndex((entry) => entry.id === place.id);
+  if (index >= 0) {
+    state.restaurants[index] = { ...state.restaurants[index], ...enriched };
+  }
+
+  if (state.selected?.id === place.id) {
+    state.selected = place;
+  }
+
+  return place;
+}
+
+function renderSelectedRestaurant(place) {
   resultName.textContent = place.name;
   resultMeta.textContent = `${state.meal === "lunch" ? "Lunch" : "Dinner"} · ${place.distance_label} · ${place.cuisine.replace(/;/g, ", ")}`;
   resultAddress.textContent = place.address;
   resultDirections.href = `https://www.google.com/maps/dir/?api=1&destination=${place.lat},${place.lng}`;
-  loadYelpLink(place);
   updateSaveButtons(place);
+}
+
+async function selectRestaurant(place) {
+  state.selected = place;
+  resultCard.hidden = false;
+  renderSelectedRestaurant(place);
+
+  if (needsEnrichment(place)) {
+    setStatus(`Looking up details for ${place.name}…`);
+    await enrichPlace(place);
+    renderSelectedRestaurant(place);
+    renderRestaurantList();
+  }
+
+  loadYelpLink(place);
   map.panTo([place.lat, place.lng], { animate: true });
   renderMapMarkers();
 }
@@ -161,20 +221,28 @@ function updateSaveButtons(place) {
   btnMarkVisited.classList.toggle("active", window.ZahaLists.isVisited(place.id));
 }
 
-function handleWantToVisit() {
+async function handleWantToVisit() {
   if (!state.selected) return;
-  window.ZahaLists.addWantToVisit(state.selected);
-  updateSaveButtons(state.selected);
-  window.ZahaSavedMarkers.renderSavedMarkers(map);
-  setStatus(`Added ${state.selected.name} to Want to visit.`);
+  try {
+    await window.ZahaLists.addWantToVisit(state.selected);
+    updateSaveButtons(state.selected);
+    window.ZahaSavedMarkers.renderSavedMarkers(map);
+    setStatus(`Added ${state.selected.name} to Want to visit.`);
+  } catch (error) {
+    setStatus(error.message || "Could not save restaurant.");
+  }
 }
 
-function handleMarkVisited() {
+async function handleMarkVisited() {
   if (!state.selected) return;
-  window.ZahaLists.addVisited(state.selected);
-  updateSaveButtons(state.selected);
-  window.ZahaSavedMarkers.renderSavedMarkers(map);
-  setStatus(`Marked ${state.selected.name} as visited.`);
+  try {
+    await window.ZahaLists.addVisited(state.selected);
+    updateSaveButtons(state.selected);
+    window.ZahaSavedMarkers.renderSavedMarkers(map);
+    setStatus(`Marked ${state.selected.name} as visited.`);
+  } catch (error) {
+    setStatus(error.message || "Could not save restaurant.");
+  }
 }
 
 async function loadYelpLink(place) {
@@ -375,4 +443,13 @@ function bindControls() {
 
 initMap();
 bindControls();
-locateUser();
+
+(async function bootstrap() {
+  try {
+    await window.ZahaLists.ensureReady();
+    window.ZahaSavedMarkers.renderSavedMarkers(map);
+  } catch (error) {
+    setStatus(error.message || "Could not load saved lists.");
+  }
+  locateUser();
+})();

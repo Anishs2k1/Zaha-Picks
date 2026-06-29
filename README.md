@@ -45,6 +45,8 @@ A web app that helps you decide where to eat for lunch or dinner when you're ind
 | Open now + within radius | `app/filters.py` |
 | Radius animates on map | Leaflet circle + `requestAnimationFrame` |
 | Two pick modes | `/api/pick` vs. list click |
+| Save want-to-visit / visited lists | `/lists` page + SQLite in `data/zaha_picks.db` |
+| Full cuisine & address on save | `app/enrich.py` + Nominatim reverse geocode |
 
 ---
 
@@ -321,6 +323,12 @@ cp .env.example .env
 
 Restart the server after saving `.env`. When you select a restaurant, the app calls `/api/yelp` to resolve the exact `yelp.com/biz/...` URL.
 
+### My Lists (persistent storage)
+
+Want-to-visit and visited restaurants are stored in a **SQLite database** at `data/zaha_picks.db` (created automatically on first run). Lists survive page reloads and browser restarts as long as the server and database file remain on the same machine.
+
+When you pick or save a restaurant, the backend fills in missing **cuisine** (from OSM tags and name) and **address** (from OSM tags or Nominatim reverse geocoding).
+
 ---
 
 ## Troubleshooting
@@ -333,6 +341,7 @@ Restart the server after saving `.env`. When you select a restaurant, the app ca
 | Geolocation blocked | Allow location or use fallback (West Lafayette) |
 | Yelp opens search, not the restaurant page | Add `YELP_API_KEY` to `.env` (see above) |
 | Overpass timeout | Wait and retry; reduce query frequency |
+| Saved lists empty after deploy | SQLite file is local to the server; back up `data/zaha_picks.db` or migrate to hosted DB |
 
 ---
 
@@ -343,8 +352,7 @@ Restart the server after saving `.env`. When you select a restaurant, the app ca
 - Save last filters in `localStorage` from `map.js`
 
 ### Medium
-- Add `POST /api/favorites` with SQLite
-- Deploy on [Render](https://render.com) or [Railway](https://railway.app) with `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+- Deploy on [Render](https://render.com) or [Railway](https://railway.app) with `uvicorn app.main:app --host 0.0.0.0 --port $PORT` (mount persistent disk for `data/`)
 
 ### Hard
 - Google Places for better hours/ratings

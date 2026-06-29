@@ -8,4 +8,6 @@ venv/
 .env.*
 !.env.example
 .DS_Store
+data/
+*.db
 .pytest_cache/

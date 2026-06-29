@@ -7,8 +7,11 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, Field
 
 from app.constants import FALLBACK_LAT, FALLBACK_LNG, METERS_PER_MILE
+from app.database import get_lists, init_db, remove_place, save_place
+from app.enrich import enrich_restaurant
 from app.overpass import fetch_restaurants
 from app.yelp import resolve_yelp_business_url
 
@@ -18,6 +21,31 @@ load_dotenv(BASE_DIR / ".env")
 app = FastAPI(title="Zaha Picks")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
+
+
+class RestaurantPayload(BaseModel):
+    id: str = Field(..., min_length=1)
+    name: str = Field(..., min_length=1)
+    lat: float
+    lng: float
+    cuisine: str = ""
+    address: str = ""
+    tags: dict | None = None
+    distance: int | None = None
+    distance_label: str | None = None
+    opening_hours: str | None = None
+    yelp_url: str | None = None
+    yelp_direct: bool | None = None
+
+
+class LocalListsMigration(BaseModel):
+    wantToVisit: list[dict] = Field(default_factory=list)
+    visited: list[dict] = Field(default_factory=list)
+
+
+@app.on_event("startup")
+async def startup() -> None:
+    init_db()
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -42,6 +70,63 @@ async def lists_page(request: Request):
             "fallback_lng": FALLBACK_LNG,
         },
     )
+
+
+@app.get("/api/lists")
+async def lists_api():
+    return get_lists()
+
+
+@app.post("/api/lists/want")
+async def add_want_to_visit(restaurant: RestaurantPayload):
+    place = await enrich_restaurant(restaurant.model_dump())
+    save_place(place, "want")
+    return get_lists()
+
+
+@app.post("/api/lists/visited")
+async def add_visited(restaurant: RestaurantPayload):
+    place = await enrich_restaurant(restaurant.model_dump())
+    save_place(place, "visited")
+    return get_lists()
+
+
+@app.delete("/api/lists/want/{osm_id}")
+async def delete_want(osm_id: str):
+    if not remove_place(osm_id, "want"):
+        raise HTTPException(status_code=404, detail="Restaurant not found in want list.")
+    return get_lists()
+
+
+@app.delete("/api/lists/visited/{osm_id}")
+async def delete_visited(osm_id: str):
+    if not remove_place(osm_id, "visited"):
+        raise HTTPException(status_code=404, detail="Restaurant not found in visited list.")
+    return get_lists()
+
+
+@app.post("/api/lists/migrate")
+async def migrate_local_lists(payload: LocalListsMigration):
+    visited_ids = set()
+
+    for place in payload.visited:
+        enriched = await enrich_restaurant(place)
+        save_place(enriched, "visited")
+        visited_ids.add(enriched["id"])
+
+    for place in payload.wantToVisit:
+        place_id = place.get("id")
+        if not place_id or place_id in visited_ids:
+            continue
+        enriched = await enrich_restaurant(place)
+        save_place(enriched, "want")
+
+    return get_lists()
+
+
+@app.post("/api/enrich")
+async def enrich_restaurant_api(restaurant: RestaurantPayload):
+    return await enrich_restaurant(restaurant.model_dump())
 
 
 @app.get("/api/restaurants")
@@ -102,6 +187,7 @@ async def pick_random(
         raise HTTPException(status_code=404, detail="No restaurants match your filters yet.")
 
     choice = random.choice(places)
+    choice = await enrich_restaurant(choice)
     yelp = await resolve_yelp_business_url(
         choice["name"],
         choice["lat"],

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>My Lists — Zaha Picks</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="header header-with-nav">
+        <nav class="top-nav" aria-label="Main">
+          <a href="/" class="nav-link">Home</a>
+          <a href="/lists" class="nav-link active">My Lists</a>
+        </nav>
+        <h1 class="title">My Lists</h1>
+        <p class="subtitle">Places you want to try &amp; places you've been</p>
+      </header>
+
+      <main class="main lists-main">
+        <aside class="panel panel-left">
+          <section class="card">
+            <div class="list-header">
+              <h2>Want to visit</h2>
+              <span id="want-count" class="badge">0</span>
+            </div>
+            <p class="hint legend-hint"><span class="legend-star">★</span> Shown as stars on the map</p>
+            <ul id="want-list" class="restaurant-list saved-list">
+              <li class="empty-state">No restaurants saved yet. Add some from the home page.</li>
+            </ul>
+          </section>
+        </aside>
+
+        <section class="map-section">
+          <div class="map-frame">
+            <div id="map"></div>
+            <div class="map-fade map-fade-top"></div>
+            <div class="map-fade map-fade-bottom"></div>
+            <div class="map-fade map-fade-left"></div>
+            <div class="map-fade map-fade-right"></div>
+          </div>
+          <div class="map-legend">
+            <span><span class="legend-star">★</span> Want to visit</span>
+            <span><span class="legend-circle"></span> Visited</span>
+          </div>
+        </section>
+
+        <aside class="panel panel-right">
+          <section class="card">
+            <div class="list-header">
+              <h2>Visited</h2>
+              <span id="visited-count" class="badge">0</span>
+            </div>
+            <p class="hint legend-hint"><span class="legend-circle"></span> Shown as circles on the map</p>
+            <ul id="visited-list" class="restaurant-list saved-list">
+              <li class="empty-state">Mark restaurants as visited while browsing on the home page.</li>
+            </ul>
+          </section>
+        </aside>
+      </main>
+    </div>
+
+    <script>
+      window.ZAHA_PICKS = {
+        fallbackLat: {{ fallback_lat }},
+        fallbackLng: {{ fallback_lng }},
+      };
+    </script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="/static/lists-storage.js"></script>
+    <script src="/static/saved-markers.js"></script>
+    <script src="/static/lists-page.js"></script>
+  </body>
+</html>

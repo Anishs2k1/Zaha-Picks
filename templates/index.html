@@ -9,7 +9,11 @@
   </head>
   <body>
     <div class="app">
-      <header class="header">
+      <header class="header header-with-nav">
+        <nav class="top-nav" aria-label="Main">
+          <a href="/" class="nav-link active">Home</a>
+          <a href="/lists" class="nav-link">My Lists</a>
+        </nav>
         <h1 class="title">Zaha Picks</h1>
         <p class="subtitle">Can't decide? Let the map choose.</p>
       </header>
@@ -88,6 +92,10 @@
             <div class="map-fade map-fade-right"></div>
           </div>
           <div class="map-status" id="map-status">Getting your location…</div>
+          <div class="map-legend">
+            <span><span class="legend-star">★</span> Want to visit</span>
+            <span><span class="legend-circle"></span> Visited</span>
+          </div>
         </section>
 
         <aside class="panel panel-right">
@@ -100,7 +108,18 @@
               <a id="result-directions" class="btn btn-secondary" href="#" target="_blank" rel="noopener">
                 Directions
               </a>
+              <a id="result-yelp" class="btn btn-yelp" href="#" target="_blank" rel="noopener">
+                View on Yelp
+              </a>
               <button type="button" id="btn-reroll" class="btn btn-primary">Pick again</button>
+            </div>
+            <div class="save-actions">
+              <button type="button" id="btn-want-visit" class="btn btn-save">
+                ★ Want to visit
+              </button>
+              <button type="button" id="btn-mark-visited" class="btn btn-save">
+                ● I've visited
+              </button>
             </div>
           </section>
 
@@ -124,6 +143,8 @@
       };
     </script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="/static/lists-storage.js"></script>
+    <script src="/static/saved-markers.js"></script>
     <script src="/static/map.js"></script>
   </body>
 </html>

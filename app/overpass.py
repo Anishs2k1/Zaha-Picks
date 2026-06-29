@@ -1,6 +1,7 @@
 import httpx
 
 from app.filters import (
+    build_yelp_url,
     distance_meters,
     format_address,
     format_distance,
@@ -25,6 +26,7 @@ def normalize_restaurant(element: dict, user_lat: float, user_lng: float) -> dic
     distance = distance_meters(user_lat, user_lng, lat, lng)
     cuisine = tags.get("cuisine") or "unspecified"
     opening_hours = tags.get("opening_hours") or tags.get("opening_hours:covid19")
+    address = format_address(tags)
 
     return {
         "id": f"{element.get('type')}/{element.get('id')}",
@@ -35,7 +37,8 @@ def normalize_restaurant(element: dict, user_lat: float, user_lng: float) -> dic
         "opening_hours": opening_hours,
         "distance": round(distance),
         "distance_label": format_distance(distance),
-        "address": format_address(tags),
+        "address": address,
+        "yelp_url": build_yelp_url(name, lat, lng, tags, address),
         "tags": tags,
     }
 

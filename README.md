@@ -310,6 +310,17 @@ uvicorn app.main:app --reload --port 8080
 
 Open **http://127.0.0.1:8000**
 
+### Direct Yelp links (optional)
+
+To open the **restaurant's Yelp page** (not a search results page), add a free [Yelp Fusion API](https://www.yelp.com/developers/v3/manage_app) key:
+
+```bash
+cp .env.example .env
+# Edit .env and set YELP_API_KEY=your_key_here
+```
+
+Restart the server after saving `.env`. When you select a restaurant, the app calls `/api/yelp` to resolve the exact `yelp.com/biz/...` URL.
+
 ---
 
 ## Troubleshooting
@@ -320,6 +331,7 @@ Open **http://127.0.0.1:8000**
 | Map is blank | Check Leaflet CSS CDN + `#map` height in CSS |
 | No restaurants | Widen radius; check `/api/restaurants` in browser or `/docs` |
 | Geolocation blocked | Allow location or use fallback (West Lafayette) |
+| Yelp opens search, not the restaurant page | Add `YELP_API_KEY` to `.env` (see above) |
 | Overpass timeout | Wait and retry; reduce query frequency |
 
 ---

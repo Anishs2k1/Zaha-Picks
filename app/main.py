@@ -2,6 +2,7 @@ import random
 from pathlib import Path
 
 import httpx
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -9,8 +10,10 @@ from fastapi.templating import Jinja2Templates
 
 from app.constants import FALLBACK_LAT, FALLBACK_LNG, METERS_PER_MILE
 from app.overpass import fetch_restaurants
+from app.yelp import resolve_yelp_business_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
 
 app = FastAPI(title="Zaha Picks")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
@@ -22,6 +25,18 @@ async def index(request: Request):
     return templates.TemplateResponse(
         request,
         "index.html",
+        {
+            "fallback_lat": FALLBACK_LAT,
+            "fallback_lng": FALLBACK_LNG,
+        },
+    )
+
+
+@app.get("/lists", response_class=HTMLResponse)
+async def lists_page(request: Request):
+    return templates.TemplateResponse(
+        request,
+        "lists.html",
         {
             "fallback_lat": FALLBACK_LAT,
             "fallback_lng": FALLBACK_LNG,
@@ -87,7 +102,27 @@ async def pick_random(
         raise HTTPException(status_code=404, detail="No restaurants match your filters yet.")
 
     choice = random.choice(places)
+    yelp = await resolve_yelp_business_url(
+        choice["name"],
+        choice["lat"],
+        choice["lng"],
+        choice.get("address", ""),
+        choice.get("tags"),
+    )
+    choice["yelp_url"] = yelp["url"]
+    choice["yelp_direct"] = yelp["direct"]
     return {
         "restaurant": choice,
         "status": f"Picked randomly from {len(places)} open spots within your radius.",
     }
+
+
+@app.get("/api/yelp")
+async def yelp_page(
+    name: str = Query(..., min_length=1),
+    lat: float = Query(...),
+    lng: float = Query(...),
+    address: str = Query(""),
+):
+    result = await resolve_yelp_business_url(name, lat, lng, address)
+    return result

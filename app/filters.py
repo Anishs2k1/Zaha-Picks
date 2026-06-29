@@ -1,6 +1,7 @@
 import math
 import re
 from datetime import datetime
+from urllib.parse import quote_plus
 
 from app.constants import CUISINE_ALIASES, METERS_PER_MILE
 
@@ -101,3 +102,18 @@ def format_address(tags: dict) -> str:
     ]
     cleaned = [part for part in parts if part]
     return " ".join(cleaned) if cleaned else "Address not listed"
+
+
+def build_yelp_url(name: str, lat: float, lng: float, tags: dict, address: str) -> str:
+    for key in ("website", "contact:website", "url"):
+        value = (tags.get(key) or "").strip()
+        if "yelp.com" in value.lower():
+            return value
+
+    find_desc = quote_plus(name)
+    if address != "Address not listed":
+        find_loc = quote_plus(address)
+    else:
+        find_loc = quote_plus(f"{lat},{lng}")
+
+    return f"https://www.yelp.com/search?find_desc={find_desc}&find_loc={find_loc}"

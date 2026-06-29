@@ -30,6 +30,9 @@ const resultName = document.getElementById("result-name");
 const resultMeta = document.getElementById("result-meta");
 const resultAddress = document.getElementById("result-address");
 const resultDirections = document.getElementById("result-directions");
+const resultYelp = document.getElementById("result-yelp");
+const btnWantVisit = document.getElementById("btn-want-visit");
+const btnMarkVisited = document.getElementById("btn-mark-visited");
 
 function initMap() {
   map = L.map("map", {
@@ -51,6 +54,8 @@ function initMap() {
     fillOpacity: 1,
     weight: 2,
   }).addTo(map);
+
+  window.ZahaSavedMarkers.renderSavedMarkers(map);
 }
 
 function setStatus(message) {
@@ -99,6 +104,8 @@ function renderMapMarkers() {
     marker.on("click", () => selectRestaurant(place));
     restaurantMarkers.push(marker);
   });
+
+  window.ZahaSavedMarkers.renderSavedMarkers(map);
 }
 
 function renderRestaurantList(scrollIntoView = false) {
@@ -141,8 +148,70 @@ function selectRestaurant(place) {
   resultMeta.textContent = `${state.meal === "lunch" ? "Lunch" : "Dinner"} · ${place.distance_label} · ${place.cuisine.replace(/;/g, ", ")}`;
   resultAddress.textContent = place.address;
   resultDirections.href = `https://www.google.com/maps/dir/?api=1&destination=${place.lat},${place.lng}`;
+  loadYelpLink(place);
+  updateSaveButtons(place);
   map.panTo([place.lat, place.lng], { animate: true });
   renderMapMarkers();
+}
+
+function updateSaveButtons(place) {
+  if (!place || !btnWantVisit || !btnMarkVisited) return;
+
+  btnWantVisit.classList.toggle("active", window.ZahaLists.isWantToVisit(place.id));
+  btnMarkVisited.classList.toggle("active", window.ZahaLists.isVisited(place.id));
+}
+
+function handleWantToVisit() {
+  if (!state.selected) return;
+  window.ZahaLists.addWantToVisit(state.selected);
+  updateSaveButtons(state.selected);
+  window.ZahaSavedMarkers.renderSavedMarkers(map);
+  setStatus(`Added ${state.selected.name} to Want to visit.`);
+}
+
+function handleMarkVisited() {
+  if (!state.selected) return;
+  window.ZahaLists.addVisited(state.selected);
+  updateSaveButtons(state.selected);
+  window.ZahaSavedMarkers.renderSavedMarkers(map);
+  setStatus(`Marked ${state.selected.name} as visited.`);
+}
+
+async function loadYelpLink(place) {
+  resultYelp.textContent = "Loading Yelp…";
+  resultYelp.classList.add("is-loading");
+  resultYelp.removeAttribute("href");
+
+  if (place.yelp_url && place.yelp_direct) {
+    resultYelp.href = place.yelp_url;
+    resultYelp.textContent = "View on Yelp";
+    resultYelp.classList.remove("is-loading");
+    return;
+  }
+
+  const params = new URLSearchParams({
+    name: place.name,
+    lat: String(place.lat),
+    lng: String(place.lng),
+    address: place.address || "",
+  });
+
+  try {
+    const response = await fetch(`/api/yelp?${params}`);
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.detail || "Could not load Yelp link.");
+    }
+    place.yelp_url = payload.url;
+    place.yelp_direct = payload.direct;
+    resultYelp.href = payload.url;
+    resultYelp.textContent = payload.direct ? "View on Yelp" : "Search on Yelp";
+  } catch {
+    resultYelp.href = place.yelp_url || "#";
+    resultYelp.textContent = "Search on Yelp";
+  }
+
+  resultYelp.classList.remove("is-loading");
 }
 
 async function pickRandomRestaurant() {
@@ -293,6 +362,14 @@ function bindControls() {
   document.getElementById("btn-browse").addEventListener("click", () => {
     renderRestaurantList(true);
     setStatus(`Browsing ${state.restaurants.length} matches — tap one to select.`);
+  });
+
+  btnWantVisit.addEventListener("click", handleWantToVisit);
+  btnMarkVisited.addEventListener("click", handleMarkVisited);
+
+  window.addEventListener("zaha-lists-updated", () => {
+    window.ZahaSavedMarkers.renderSavedMarkers(map);
+    if (state.selected) updateSaveButtons(state.selected);
   });
 }
 

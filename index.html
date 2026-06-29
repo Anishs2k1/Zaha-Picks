@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Zaha Picks</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="header">
+        <h1 class="title">Zaha Picks</h1>
+        <p class="subtitle">Can't decide? Let the map choose.</p>
+      </header>
+
+      <main class="main">
+        <aside class="panel panel-left">
+          <section class="card">
+            <h2>Your choices</h2>
+            <p class="hint">Pick these first — we'll only show places that match.</p>
+
+            <label class="field">
+              <span>Meal</span>
+              <div class="segmented" role="group" aria-label="Meal type">
+                <button type="button" class="segment active" data-meal="lunch">Lunch</button>
+                <button type="button" class="segment" data-meal="dinner">Dinner</button>
+              </div>
+            </label>
+
+            <label class="field">
+              <span>Cuisine</span>
+              <select id="cuisine-select">
+                <option value="any">Any cuisine</option>
+                <option value="american">American</option>
+                <option value="asian">Asian</option>
+                <option value="chinese">Chinese</option>
+                <option value="indian">Indian</option>
+                <option value="italian">Italian</option>
+                <option value="japanese">Japanese</option>
+                <option value="mexican">Mexican</option>
+                <option value="pizza">Pizza</option>
+                <option value="seafood">Seafood</option>
+                <option value="thai">Thai</option>
+                <option value="vietnamese">Vietnamese</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Search radius</span>
+              <select id="radius-select">
+                <option value="1609" selected>1 mile</option>
+                <option value="3218">2 miles</option>
+                <option value="4828">3 miles</option>
+                <option value="8047">5 miles</option>
+              </select>
+            </label>
+
+            <label class="checkbox-field">
+              <input type="checkbox" id="open-now" checked />
+              <span>Open right now</span>
+            </label>
+          </section>
+
+          <section class="card">
+            <h2>How to pick</h2>
+            <div class="mode-buttons">
+              <button type="button" id="btn-random" class="btn btn-primary">
+                Pick for me
+              </button>
+              <button type="button" id="btn-browse" class="btn btn-secondary">
+                Browse matches
+              </button>
+            </div>
+            <p class="hint mode-hint">
+              <strong>Pick for me</strong> — one random spot from your filters.<br />
+              <strong>Browse matches</strong> — see the list and choose yourself.
+            </p>
+          </section>
+        </aside>
+
+        <section class="map-section">
+          <div class="map-frame">
+            <div id="map"></div>
+            <div class="map-fade map-fade-top"></div>
+            <div class="map-fade map-fade-bottom"></div>
+            <div class="map-fade map-fade-left"></div>
+            <div class="map-fade map-fade-right"></div>
+          </div>
+          <div class="map-status" id="map-status">Getting your location…</div>
+        </section>
+
+        <aside class="panel panel-right">
+          <section class="card result-card" id="result-card" hidden>
+            <p class="result-label">Your pick</p>
+            <h2 id="result-name">—</h2>
+            <p id="result-meta" class="result-meta"></p>
+            <p id="result-address" class="result-address"></p>
+            <div class="result-actions">
+              <a id="result-directions" class="btn btn-secondary" href="#" target="_blank" rel="noopener">
+                Directions
+              </a>
+              <button type="button" id="btn-reroll" class="btn btn-primary">Pick again</button>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="list-header">
+              <h2>Nearby spots</h2>
+              <span id="match-count" class="badge">0</span>
+            </div>
+            <ul id="restaurant-list" class="restaurant-list">
+              <li class="empty-state">Set your filters and search to see restaurants.</li>
+            </ul>
+          </section>
+        </aside>
+      </main>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

@@ -40,6 +40,7 @@ const restaurantSearch = document.getElementById("restaurant-search");
 const btnSearch = document.getElementById("btn-search");
 const resultsTitle = document.getElementById("results-title");
 const searchValidation = document.getElementById("search-validation");
+const searchResultsPanel = document.getElementById("search-results-panel");
 const loadingBar = document.getElementById("loading-bar");
 const loadingBarLabel = document.getElementById("loading-bar-label");
 
@@ -136,11 +137,16 @@ function setResultsMode(mode) {
   resultsTitle.textContent = mode === "search" ? "Search results" : "Nearby spots";
 }
 
+function updateResultsPanelVisibility() {
+  if (!searchResultsPanel) return;
+  searchResultsPanel.hidden = !isSearchMode();
+}
+
 function clearSearchMode() {
   state.searchResults = null;
   state.activeSearchQuery = "";
-  setResultsMode("nearby");
   setSearchValidation("");
+  updateResultsPanelVisibility();
   if (restaurantSearch) {
     restaurantSearch.value = "";
   }
@@ -207,16 +213,23 @@ function renderMapMarkers() {
 }
 
 function renderRestaurantList(scrollIntoView = false) {
+  updateResultsPanelVisibility();
+
+  if (!isSearchMode()) {
+    if (restaurantList) {
+      restaurantList.innerHTML = "";
+    }
+    if (matchCount) {
+      matchCount.textContent = "0";
+    }
+    return;
+  }
+
   const display = getDisplayRestaurants();
   matchCount.textContent = String(display.length);
 
   if (display.length === 0) {
-    if (isSearchMode()) {
-      restaurantList.innerHTML = `<li class="empty-state">No restaurants match "${state.activeSearchQuery}". Try another search.</li>`;
-    } else {
-      restaurantList.innerHTML =
-        '<li class="empty-state">No matches found. Try expanding the radius or changing cuisine.</li>';
-    }
+    restaurantList.innerHTML = `<li class="empty-state">No restaurants match "${state.activeSearchQuery}". Try another search.</li>`;
     return;
   }
 
@@ -499,7 +512,7 @@ async function executeSearch() {
     renderRestaurantList();
     renderMapMarkers();
     updateRadiusCircle(false);
-    setStatus(`Showing ${state.nearbyRestaurants.length} spots within your selected radius.`);
+    setStatus("Enter a search to see matching restaurants.");
     return;
   }
 
@@ -526,6 +539,7 @@ async function executeSearch() {
       state.selected = null;
       resultCard.hidden = true;
       setResultsMode("search");
+      updateResultsPanelVisibility();
       renderRestaurantList(true);
       renderMapMarkers();
       fitMapToRestaurants(state.searchResults);
@@ -541,10 +555,15 @@ function showNearbyMatches(scrollIntoView = false) {
   clearSearchMode();
   state.selected = null;
   resultCard.hidden = true;
-  renderRestaurantList(scrollIntoView);
+  renderRestaurantList();
   renderMapMarkers();
   updateRadiusCircle(false);
-  setStatus(`Browsing ${state.nearbyRestaurants.length} matches within your radius — tap one to select.`);
+  setStatus(
+    `${state.nearbyRestaurants.length} matches within your radius — tap a pin on the map to select.`
+  );
+  if (scrollIntoView && restaurantSearch) {
+    restaurantSearch.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
 }
 
 function setUserLocation(lat, lng, label) {
@@ -639,6 +658,18 @@ function bindControls() {
         executeSearch();
       }
     });
+
+    restaurantSearch.addEventListener("input", () => {
+      if (!restaurantSearch.value.trim() && isSearchMode()) {
+        clearSearchMode();
+        state.selected = null;
+        resultCard.hidden = true;
+        renderRestaurantList();
+        renderMapMarkers();
+        updateRadiusCircle(false);
+        setStatus("Enter a search to see matching restaurants.");
+      }
+    });
   }
 
   btnWantVisit.addEventListener("click", handleWantToVisit);
@@ -655,6 +686,7 @@ bindControls();
 
 (async function bootstrap() {
   await window.ZahaLists.ensureReady();
+  updateResultsPanelVisibility();
   window.ZahaSavedMarkers.renderSavedMarkers(map, window.ZahaLists.getCachedLists());
   locateUser();
 })();

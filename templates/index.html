@@ -124,10 +124,6 @@
           </section>
 
           <section class="card">
-            <div class="list-header">
-              <h2 id="results-title">Nearby spots</h2>
-              <span id="match-count" class="badge">0</span>
-            </div>
             <div class="search-row">
               <label class="field search-field">
                 <span>Search restaurants</span>
@@ -144,12 +140,16 @@
               </button>
             </div>
             <p class="hint search-hint">
-              Search looks within ~50 mi. Meal, cuisine, and radius filters only apply to Pick/Browse.
+              Search looks within ~50 mi. Results appear below after you search.
             </p>
             <p id="search-validation" class="search-validation" hidden></p>
-            <ul id="restaurant-list" class="restaurant-list">
-              <li class="empty-state">Set your filters and search to see restaurants.</li>
-            </ul>
+            <div id="search-results-panel" class="search-results-panel" hidden>
+              <div class="list-header">
+                <h2 id="results-title">Search results</h2>
+                <span id="match-count" class="badge">0</span>
+              </div>
+              <ul id="restaurant-list" class="restaurant-list"></ul>
+            </div>
           </section>
         </aside>
       </main>

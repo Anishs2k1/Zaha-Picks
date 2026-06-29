@@ -20,9 +20,9 @@ templates = Jinja2Templates(directory=BASE_DIR / "templates")
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     return templates.TemplateResponse(
+        request,
         "index.html",
         {
-            "request": request,
             "fallback_lat": FALLBACK_LAT,
             "fallback_lng": FALLBACK_LNG,
         },
@@ -49,6 +49,8 @@ async def restaurants(
         )
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail="Could not load nearby restaurants.") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Unexpected error while searching.") from exc
 
     radius_miles = radius_meters / METERS_PER_MILE
     meal_label = meal
@@ -69,14 +71,18 @@ async def pick_random(
     meal: str = Query("lunch", pattern="^(lunch|dinner)$"),
     open_now: bool = Query(True),
 ):
-    places = await fetch_restaurants(
-        lat=lat,
-        lng=lng,
-        radius_meters=radius_meters,
-        cuisine=cuisine,
-        meal=meal,
-        open_now_only=open_now,
-    )
+    try:
+        places = await fetch_restaurants(
+            lat=lat,
+            lng=lng,
+            radius_meters=radius_meters,
+            cuisine=cuisine,
+            meal=meal,
+            open_now_only=open_now,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="Could not load nearby restaurants.") from exc
+
     if not places:
         raise HTTPException(status_code=404, detail="No restaurants match your filters yet.")
 

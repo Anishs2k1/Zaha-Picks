@@ -164,6 +164,29 @@ def infer_cuisine(tags: dict, name: str, existing: str | None = None) -> str:
     return "Unspecified"
 
 
+def matches_search(place: dict, query: str) -> bool:
+    normalized = query.strip().lower()
+    if not normalized:
+        return True
+
+    haystack = " ".join(
+        [
+            place.get("name") or "",
+            place.get("cuisine") or "",
+            place.get("address") or "",
+        ]
+    ).lower()
+
+    terms = [term for term in normalized.split() if term]
+    return all(term in haystack for term in terms)
+
+
+def filter_by_search(places: list[dict], query: str) -> list[dict]:
+    if not query.strip():
+        return places
+    return [place for place in places if matches_search(place, query)]
+
+
 def build_yelp_url(name: str, lat: float, lng: float, tags: dict, address: str) -> str:
     for key in ("website", "contact:website", "url"):
         value = (tags.get(key) or "").strip()

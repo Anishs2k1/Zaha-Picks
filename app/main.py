@@ -10,6 +10,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
 from app.constants import FALLBACK_LAT, FALLBACK_LNG, METERS_PER_MILE
+from app.filters import filter_by_search
 from app.database import get_lists, init_db, remove_place, save_place
 from app.enrich import enrich_restaurant
 from app.overpass import fetch_restaurants
@@ -137,6 +138,7 @@ async def restaurants(
     cuisine: str = Query("any"),
     meal: str = Query("lunch", pattern="^(lunch|dinner)$"),
     open_now: bool = Query(True),
+    q: str = Query(""),
 ):
     try:
         places = await fetch_restaurants(
@@ -147,6 +149,7 @@ async def restaurants(
             meal=meal,
             open_now_only=open_now,
         )
+        places = filter_by_search(places, q)
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail="Could not load nearby restaurants.") from exc
     except Exception as exc:
@@ -154,8 +157,14 @@ async def restaurants(
 
     radius_miles = radius_meters / METERS_PER_MILE
     meal_label = meal
+    search_label = q.strip()
     if places:
-        status = f"Found {len(places)} spots within {radius_miles:.1f} mi for {meal_label}."
+        if search_label:
+            status = f"Found {len(places)} spots matching \"{search_label}\" within {radius_miles:.1f} mi."
+        else:
+            status = f"Found {len(places)} spots within {radius_miles:.1f} mi for {meal_label}."
+    elif search_label:
+        status = f"No spots match \"{search_label}\". Try a different name or wider radius."
     else:
         status = f"No spots found within {radius_miles:.1f} mi. Try a wider radius."
 
@@ -170,6 +179,7 @@ async def pick_random(
     cuisine: str = Query("any"),
     meal: str = Query("lunch", pattern="^(lunch|dinner)$"),
     open_now: bool = Query(True),
+    q: str = Query(""),
 ):
     try:
         places = await fetch_restaurants(
@@ -180,10 +190,16 @@ async def pick_random(
             meal=meal,
             open_now_only=open_now,
         )
+        places = filter_by_search(places, q)
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail="Could not load nearby restaurants.") from exc
 
     if not places:
+        if q.strip():
+            raise HTTPException(
+                status_code=404,
+                detail=f"No restaurants match \"{q.strip()}\" with your current filters.",
+            )
         raise HTTPException(status_code=404, detail="No restaurants match your filters yet.")
 
     choice = random.choice(places)
@@ -197,9 +213,14 @@ async def pick_random(
     )
     choice["yelp_url"] = yelp["url"]
     choice["yelp_direct"] = yelp["direct"]
+    search_label = q.strip()
+    if search_label:
+        status = f"Picked randomly from {len(places)} matches for \"{search_label}\"."
+    else:
+        status = f"Picked randomly from {len(places)} open spots within your radius."
     return {
         "restaurant": choice,
-        "status": f"Picked randomly from {len(places)} open spots within your radius.",
+        "status": status,
     }
 
 

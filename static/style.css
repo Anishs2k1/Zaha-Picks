@@ -262,6 +262,34 @@ body {
   color: var(--text);
 }
 
+.field input[type="search"] {
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.field input[type="search"]::placeholder {
+  color: #9a9a9a;
+}
+
+.field input[type="search"]:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.search-field {
+  margin-bottom: 0.85rem;
+}
+
+.list-header + .search-field {
+  margin-top: -0.15rem;
+}
+
 .segmented {
   display: grid;
   grid-template-columns: 1fr 1fr;

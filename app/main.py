@@ -9,7 +9,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
-from app.constants import FALLBACK_LAT, FALLBACK_LNG, METERS_PER_MILE
+from app.constants import (
+    FALLBACK_LAT,
+    FALLBACK_LNG,
+    MAX_SEARCH_RESULTS,
+    METERS_PER_MILE,
+    SEARCH_RADIUS_METERS,
+)
 from app.filters import filter_by_search
 from app.database import get_lists, init_db, remove_place, save_place
 from app.enrich import enrich_restaurant
@@ -138,7 +144,6 @@ async def restaurants(
     cuisine: str = Query("any"),
     meal: str = Query("lunch", pattern="^(lunch|dinner)$"),
     open_now: bool = Query(True),
-    q: str = Query(""),
 ):
     try:
         places = await fetch_restaurants(
@@ -149,7 +154,6 @@ async def restaurants(
             meal=meal,
             open_now_only=open_now,
         )
-        places = filter_by_search(places, q)
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail="Could not load nearby restaurants.") from exc
     except Exception as exc:
@@ -157,18 +161,51 @@ async def restaurants(
 
     radius_miles = radius_meters / METERS_PER_MILE
     meal_label = meal
-    search_label = q.strip()
     if places:
-        if search_label:
-            status = f"Found {len(places)} spots matching \"{search_label}\" within {radius_miles:.1f} mi."
-        else:
-            status = f"Found {len(places)} spots within {radius_miles:.1f} mi for {meal_label}."
-    elif search_label:
-        status = f"No spots match \"{search_label}\". Try a different name or wider radius."
+        status = f"Found {len(places)} spots within {radius_miles:.1f} mi for {meal_label}."
     else:
         status = f"No spots found within {radius_miles:.1f} mi. Try a wider radius."
 
     return {"restaurants": places, "count": len(places), "status": status}
+
+
+@app.get("/api/search")
+async def search_restaurants(
+    lat: float = Query(...),
+    lng: float = Query(...),
+    q: str = Query(..., min_length=2, max_length=80),
+):
+    try:
+        places = await fetch_restaurants(
+            lat=lat,
+            lng=lng,
+            radius_meters=SEARCH_RADIUS_METERS,
+            cuisine="any",
+            meal="lunch",
+            open_now_only=False,
+        )
+        places = filter_by_search(places, q)
+        total_matches = len(places)
+        places = places[:MAX_SEARCH_RESULTS]
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="Could not search restaurants.") from exc
+
+    search_label = q.strip()
+    radius_miles = SEARCH_RADIUS_METERS / METERS_PER_MILE
+    if places:
+        status = f"Found {total_matches} match{'es' if total_matches != 1 else ''} for \"{search_label}\" within {radius_miles:.0f} mi."
+        if total_matches > MAX_SEARCH_RESULTS:
+            status += f" Showing closest {MAX_SEARCH_RESULTS}."
+    else:
+        status = f"No restaurants match \"{search_label}\" within {radius_miles:.0f} mi."
+
+    return {
+        "restaurants": places,
+        "count": len(places),
+        "total_matches": total_matches,
+        "status": status,
+        "search_radius_miles": round(radius_miles),
+    }
 
 
 @app.get("/api/pick")
@@ -179,7 +216,6 @@ async def pick_random(
     cuisine: str = Query("any"),
     meal: str = Query("lunch", pattern="^(lunch|dinner)$"),
     open_now: bool = Query(True),
-    q: str = Query(""),
 ):
     try:
         places = await fetch_restaurants(
@@ -190,16 +226,10 @@ async def pick_random(
             meal=meal,
             open_now_only=open_now,
         )
-        places = filter_by_search(places, q)
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail="Could not load nearby restaurants.") from exc
 
     if not places:
-        if q.strip():
-            raise HTTPException(
-                status_code=404,
-                detail=f"No restaurants match \"{q.strip()}\" with your current filters.",
-            )
         raise HTTPException(status_code=404, detail="No restaurants match your filters yet.")
 
     choice = random.choice(places)
@@ -213,14 +243,9 @@ async def pick_random(
     )
     choice["yelp_url"] = yelp["url"]
     choice["yelp_direct"] = yelp["direct"]
-    search_label = q.strip()
-    if search_label:
-        status = f"Picked randomly from {len(places)} matches for \"{search_label}\"."
-    else:
-        status = f"Picked randomly from {len(places)} open spots within your radius."
     return {
         "restaurant": choice,
-        "status": status,
+        "status": f"Picked randomly from {len(places)} open spots within your radius.",
     }
 
 

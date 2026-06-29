@@ -10,8 +10,9 @@ const state = {
   openNowOnly: true,
   userLat: null,
   userLng: null,
-  allRestaurants: [],
-  searchQuery: "",
+  nearbyRestaurants: [],
+  searchResults: null,
+  activeSearchQuery: "",
   selected: null,
 };
 
@@ -19,6 +20,7 @@ let map;
 let radiusCircle;
 let userMarker;
 let restaurantMarkers = [];
+let loadingCount = 0;
 
 const cuisineSelect = document.getElementById("cuisine-select");
 const radiusSelect = document.getElementById("radius-select");
@@ -35,6 +37,11 @@ const resultYelp = document.getElementById("result-yelp");
 const btnWantVisit = document.getElementById("btn-want-visit");
 const btnMarkVisited = document.getElementById("btn-mark-visited");
 const restaurantSearch = document.getElementById("restaurant-search");
+const btnSearch = document.getElementById("btn-search");
+const resultsTitle = document.getElementById("results-title");
+const searchValidation = document.getElementById("search-validation");
+const loadingBar = document.getElementById("loading-bar");
+const loadingBarLabel = document.getElementById("loading-bar-label");
 
 function initMap() {
   map = L.map("map", {
@@ -62,8 +69,85 @@ function setStatus(message) {
   mapStatus.textContent = message;
 }
 
+function showLoading(label = "Searching…") {
+  loadingCount += 1;
+  if (loadingBarLabel) {
+    loadingBarLabel.textContent = label;
+  }
+  if (loadingBar) {
+    loadingBar.hidden = false;
+  }
+}
+
+function hideLoading() {
+  loadingCount = Math.max(0, loadingCount - 1);
+  if (loadingCount === 0 && loadingBar) {
+    loadingBar.hidden = true;
+  }
+}
+
+async function withLoading(label, task) {
+  showLoading(label);
+  try {
+    return await task();
+  } finally {
+    hideLoading();
+  }
+}
+
+function setSearchValidation(message = "") {
+  if (!searchValidation) return;
+  if (!message) {
+    searchValidation.hidden = true;
+    searchValidation.textContent = "";
+    return;
+  }
+  searchValidation.hidden = false;
+  searchValidation.textContent = message;
+}
+
+function validateSearchQuery(raw) {
+  const query = raw.trim();
+  if (!query) {
+    return { ok: true, clear: true };
+  }
+  if (query.length < 2) {
+    return { ok: false, message: "Enter at least 2 characters to search." };
+  }
+  if (query.length > 80) {
+    return { ok: false, message: "Search is too long. Try a shorter phrase." };
+  }
+  return { ok: true, query };
+}
+
+function isSearchMode() {
+  return state.searchResults !== null;
+}
+
+function getDisplayRestaurants() {
+  if (isSearchMode()) {
+    return state.searchResults;
+  }
+  return state.nearbyRestaurants;
+}
+
+function setResultsMode(mode) {
+  if (!resultsTitle) return;
+  resultsTitle.textContent = mode === "search" ? "Search results" : "Nearby spots";
+}
+
+function clearSearchMode() {
+  state.searchResults = null;
+  state.activeSearchQuery = "";
+  setResultsMode("nearby");
+  setSearchValidation("");
+  if (restaurantSearch) {
+    restaurantSearch.value = "";
+  }
+}
+
 function filterParams() {
-  const params = new URLSearchParams({
+  return new URLSearchParams({
     lat: String(state.userLat),
     lng: String(state.userLng),
     radius_meters: String(state.radiusMeters),
@@ -71,29 +155,10 @@ function filterParams() {
     meal: state.meal,
     open_now: String(state.openNowOnly),
   });
-  const query = state.searchQuery.trim();
-  if (query) {
-    params.set("q", query);
-  }
-  return params;
-}
-
-function matchesSearch(place, query) {
-  const haystack = `${place.name} ${place.cuisine} ${place.address}`.toLowerCase();
-  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-  return terms.every((term) => haystack.includes(term));
-}
-
-function getVisibleRestaurants() {
-  const query = state.searchQuery.trim();
-  if (!query) {
-    return state.allRestaurants;
-  }
-  return state.allRestaurants.filter((place) => matchesSearch(place, query));
 }
 
 function getMapRestaurants() {
-  const visible = getVisibleRestaurants();
+  const visible = getDisplayRestaurants();
   if (!state.selected) {
     return visible;
   }
@@ -101,6 +166,18 @@ function getMapRestaurants() {
     return visible;
   }
   return [...visible, state.selected];
+}
+
+function fitMapToRestaurants(places) {
+  if (!map || places.length === 0) return;
+
+  if (places.length === 1) {
+    map.setView([places[0].lat, places[0].lng], 15);
+    return;
+  }
+
+  const bounds = L.latLngBounds(places.map((place) => [place.lat, place.lng]));
+  map.fitBounds(bounds, { padding: [48, 48] });
 }
 
 function clearRestaurantMarkers() {
@@ -130,18 +207,20 @@ function renderMapMarkers() {
 }
 
 function renderRestaurantList(scrollIntoView = false) {
-  const visible = getVisibleRestaurants();
-  matchCount.textContent = String(visible.length);
+  const display = getDisplayRestaurants();
+  matchCount.textContent = String(display.length);
 
-  if (visible.length === 0) {
-    const query = state.searchQuery.trim();
-    restaurantList.innerHTML = query
-      ? `<li class="empty-state">No restaurants match "${query}". Try another name or clear the search.</li>`
-      : '<li class="empty-state">No matches found. Try expanding the radius or changing cuisine.</li>';
+  if (display.length === 0) {
+    if (isSearchMode()) {
+      restaurantList.innerHTML = `<li class="empty-state">No restaurants match "${state.activeSearchQuery}". Try another search.</li>`;
+    } else {
+      restaurantList.innerHTML =
+        '<li class="empty-state">No matches found. Try expanding the radius or changing cuisine.</li>';
+    }
     return;
   }
 
-  restaurantList.innerHTML = visible
+  restaurantList.innerHTML = display
     .map(
       (place) => `
       <li class="restaurant-item" data-id="${place.id}">
@@ -155,7 +234,7 @@ function renderRestaurantList(scrollIntoView = false) {
 
   restaurantList.querySelectorAll(".restaurant-item").forEach((item) => {
     item.addEventListener("click", () => {
-      const place = visible.find((entry) => entry.id === item.dataset.id);
+      const place = display.find((entry) => entry.id === item.dataset.id);
       if (place) selectRestaurant(place);
     });
   });
@@ -203,9 +282,15 @@ async function enrichPlace(place) {
   const enriched = await response.json();
   Object.assign(place, enriched);
 
-  const index = state.allRestaurants.findIndex((entry) => entry.id === place.id);
+  const index = state.nearbyRestaurants.findIndex((entry) => entry.id === place.id);
   if (index >= 0) {
-    state.allRestaurants[index] = { ...state.allRestaurants[index], ...enriched };
+    state.nearbyRestaurants[index] = { ...state.nearbyRestaurants[index], ...enriched };
+  }
+
+  const searchIndex =
+    state.searchResults?.findIndex((entry) => entry.id === place.id) ?? -1;
+  if (searchIndex >= 0) {
+    state.searchResults[searchIndex] = { ...state.searchResults[searchIndex], ...enriched };
   }
 
   if (state.selected?.id === place.id) {
@@ -309,15 +394,21 @@ async function loadYelpLink(place) {
 }
 
 async function pickRandomRestaurant() {
-  setStatus("Picking a random spot…");
+  if (state.userLat == null || state.userLng == null) return;
+
+  clearSearchMode();
+  setResultsMode("nearby");
+
   try {
-    const response = await fetch(`/api/pick?${filterParams()}`);
-    const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(payload.detail || "No restaurants match your filters yet.");
-    }
-    selectRestaurant(payload.restaurant);
-    setStatus(payload.status);
+    await withLoading("Picking a random spot…", async () => {
+      const response = await fetch(`/api/pick?${filterParams()}`);
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail || "No restaurants match your filters yet.");
+      }
+      await selectRestaurant(payload.restaurant);
+      setStatus(payload.status);
+    });
   } catch (error) {
     setStatus(error.message);
   }
@@ -360,58 +451,100 @@ function animateRadius(targetRadius) {
 async function refreshRestaurants() {
   if (state.userLat == null || state.userLng == null) return;
 
-  setStatus("Searching nearby restaurants…");
-
   try {
-    const params = new URLSearchParams({
-      lat: String(state.userLat),
-      lng: String(state.userLng),
-      radius_meters: String(state.radiusMeters),
-      cuisine: state.cuisine,
-      meal: state.meal,
-      open_now: String(state.openNowOnly),
+    await withLoading("Loading nearby restaurants…", async () => {
+      const response = await fetch(`/api/restaurants?${filterParams()}`);
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.detail || "Could not load nearby restaurants.");
+      }
+      const payload = await response.json();
+      state.nearbyRestaurants = payload.restaurants;
+
+      if (!isSearchMode()) {
+        state.selected = null;
+        resultCard.hidden = true;
+        renderRestaurantList();
+        renderMapMarkers();
+        updateRadiusCircle(true);
+        setStatus(payload.status);
+        return;
+      }
+
+      renderRestaurantList();
+      renderMapMarkers();
+      updateRadiusCircle(false);
     });
-    const response = await fetch(`/api/restaurants?${params}`);
-    if (!response.ok) {
-      const payload = await response.json().catch(() => ({}));
-      throw new Error(payload.detail || "Could not load nearby restaurants.");
-    }
-    const payload = await response.json();
-    state.allRestaurants = payload.restaurants;
-    state.selected = null;
-    resultCard.hidden = true;
-    renderRestaurantList();
-    renderMapMarkers();
-    updateRadiusCircle(true);
-    updateSearchStatus(payload.status);
   } catch (error) {
     setStatus(error.message || "Something went wrong while searching.");
   }
 }
 
-function updateSearchStatus(fallbackStatus) {
-  const query = state.searchQuery.trim();
-  const visible = getVisibleRestaurants();
+async function executeSearch() {
+  if (!restaurantSearch) return;
 
-  if (!query) {
-    if (fallbackStatus) {
-      setStatus(fallbackStatus);
-    }
+  const validation = validateSearchQuery(restaurantSearch.value);
+  setSearchValidation("");
+
+  if (!validation.ok) {
+    setSearchValidation(validation.message);
+    restaurantSearch.focus();
     return;
   }
 
-  if (visible.length === 0) {
-    setStatus(`No restaurants match "${query}".`);
+  if (validation.clear) {
+    clearSearchMode();
+    state.selected = null;
+    resultCard.hidden = true;
+    renderRestaurantList();
+    renderMapMarkers();
+    updateRadiusCircle(false);
+    setStatus(`Showing ${state.nearbyRestaurants.length} spots within your selected radius.`);
     return;
   }
 
-  setStatus(`${visible.length} spot${visible.length === 1 ? "" : "s"} match "${query}".`);
+  if (state.userLat == null || state.userLng == null) {
+    setSearchValidation("Waiting for your location before searching.");
+    return;
+  }
+
+  try {
+    await withLoading("Searching restaurants…", async () => {
+      const params = new URLSearchParams({
+        lat: String(state.userLat),
+        lng: String(state.userLng),
+        q: validation.query,
+      });
+      const response = await fetch(`/api/search?${params}`);
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail || "Search could not be completed.");
+      }
+
+      state.activeSearchQuery = validation.query;
+      state.searchResults = payload.restaurants;
+      state.selected = null;
+      resultCard.hidden = true;
+      setResultsMode("search");
+      renderRestaurantList(true);
+      renderMapMarkers();
+      fitMapToRestaurants(state.searchResults);
+      setStatus(payload.status);
+    });
+  } catch (error) {
+    console.error(error);
+    setSearchValidation("Search could not be completed. Please try again.");
+  }
 }
 
-function applySearchFilter() {
-  renderRestaurantList();
+function showNearbyMatches(scrollIntoView = false) {
+  clearSearchMode();
+  state.selected = null;
+  resultCard.hidden = true;
+  renderRestaurantList(scrollIntoView);
   renderMapMarkers();
-  updateSearchStatus();
+  updateRadiusCircle(false);
+  setStatus(`Browsing ${state.nearbyRestaurants.length} matches within your radius — tap one to select.`);
 }
 
 function setUserLocation(lat, lng, label) {
@@ -492,20 +625,19 @@ function bindControls() {
   document.getElementById("btn-random").addEventListener("click", pickRandomRestaurant);
   document.getElementById("btn-reroll").addEventListener("click", pickRandomRestaurant);
   document.getElementById("btn-browse").addEventListener("click", () => {
-    renderRestaurantList(true);
-    const visible = getVisibleRestaurants();
-    setStatus(`Browsing ${visible.length} matches — tap one to select.`);
+    showNearbyMatches(true);
   });
 
-  if (restaurantSearch) {
-    restaurantSearch.addEventListener("input", () => {
-      state.searchQuery = restaurantSearch.value;
-      applySearchFilter();
-    });
+  if (btnSearch) {
+    btnSearch.addEventListener("click", executeSearch);
+  }
 
-    restaurantSearch.addEventListener("search", () => {
-      state.searchQuery = restaurantSearch.value;
-      applySearchFilter();
+  if (restaurantSearch) {
+    restaurantSearch.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        executeSearch();
+      }
     });
   }
 

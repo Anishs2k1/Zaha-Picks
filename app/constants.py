@@ -1,6 +1,8 @@
 FALLBACK_LAT = 40.4259
 FALLBACK_LNG = -86.9081
 METERS_PER_MILE = 1609.34
+SEARCH_RADIUS_METERS = 80467  # ~50 miles — used for name search, not filter pick/browse
+MAX_SEARCH_RESULTS = 100
 
 CUISINE_ALIASES = {
     "american": ["american", "burger", "bbq", "barbecue"],

@@ -125,25 +125,43 @@
 
           <section class="card">
             <div class="list-header">
-              <h2>Nearby spots</h2>
+              <h2 id="results-title">Nearby spots</h2>
               <span id="match-count" class="badge">0</span>
             </div>
-            <label class="field search-field">
-              <span>Search restaurants</span>
-              <input
-                type="search"
-                id="restaurant-search"
-                placeholder="Name, cuisine, or street…"
-                autocomplete="off"
-                enterkeyhint="search"
-              />
-            </label>
+            <div class="search-row">
+              <label class="field search-field">
+                <span>Search restaurants</span>
+                <input
+                  type="search"
+                  id="restaurant-search"
+                  placeholder="Name, cuisine, or street…"
+                  autocomplete="off"
+                  enterkeyhint="search"
+                />
+              </label>
+              <button type="button" id="btn-search" class="btn btn-primary btn-search">
+                Search
+              </button>
+            </div>
+            <p class="hint search-hint">
+              Search looks within ~50 mi. Meal, cuisine, and radius filters only apply to Pick/Browse.
+            </p>
+            <p id="search-validation" class="search-validation" hidden></p>
             <ul id="restaurant-list" class="restaurant-list">
               <li class="empty-state">Set your filters and search to see restaurants.</li>
             </ul>
           </section>
         </aside>
       </main>
+
+      <div id="loading-bar" class="loading-bar" hidden aria-live="polite">
+        <div class="loading-bar-dots" aria-hidden="true">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <p class="loading-bar-label" id="loading-bar-label">Searching…</p>
+      </div>
     </div>
 
     <script>

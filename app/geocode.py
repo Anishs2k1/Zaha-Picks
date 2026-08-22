@@ -3,6 +3,7 @@ import httpx
 from app.database import get_geocode_cache, set_geocode_cache
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/reverse"
+NOMINATIM_SEARCH_URL = "https://nominatim.openstreetmap.org/search"
 USER_AGENT = "ZahaPicks/0.3 (restaurant lists; contact via GitHub Anishs2k1/Zaha-Picks)"
 
 
@@ -66,3 +67,66 @@ async def reverse_geocode(lat: float, lng: float) -> str | None:
     if formatted:
         set_geocode_cache(cache_key, formatted)
     return formatted
+
+
+def _format_search_label(payload: dict) -> str:
+    address = payload.get("address") or {}
+    city = (
+        address.get("city")
+        or address.get("town")
+        or address.get("village")
+        or address.get("hamlet")
+    )
+    state = address.get("state")
+    road = address.get("road")
+
+    if road and city:
+        return f"{road}, {city}"
+    if city and state:
+        return f"{city}, {state}"
+
+    display = (payload.get("display_name") or "").strip()
+    if display:
+        parts = [part.strip() for part in display.split(",")[:3] if part.strip()]
+        if parts:
+            return ", ".join(parts)
+    return display or "Selected location"
+
+
+async def forward_geocode(query: str, limit: int = 5) -> list[dict]:
+    cleaned = query.strip()
+    if len(cleaned) < 2:
+        return []
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                NOMINATIM_SEARCH_URL,
+                params={
+                    "q": cleaned,
+                    "format": "json",
+                    "limit": limit,
+                    "addressdetails": 1,
+                },
+                headers={"User-Agent": USER_AGENT},
+            )
+            response.raise_for_status()
+            payload = response.json()
+    except httpx.HTTPError:
+        return []
+
+    results = []
+    for item in payload:
+        try:
+            lat = float(item["lat"])
+            lng = float(item["lon"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        results.append(
+            {
+                "lat": lat,
+                "lng": lng,
+                "label": _format_search_label(item),
+            }
+        )
+    return results

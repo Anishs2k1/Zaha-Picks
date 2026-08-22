@@ -145,10 +145,65 @@ body {
 .map-legend {
   display: flex;
   justify-content: center;
+  flex-wrap: wrap;
   gap: 1.25rem;
   margin-top: 0.75rem;
   color: var(--muted);
   font-size: 0.85rem;
+}
+
+.location-label {
+  margin: 0 0 0.85rem;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.location-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.btn-compact {
+  flex: 1 1 auto;
+  min-width: 5.5rem;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.82rem;
+}
+
+.btn-compact.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.custom-coords {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.legend-custom {
+  color: #2f6f4f;
+  font-size: 1rem;
+}
+
+.map-frame.is-picking {
+  cursor: crosshair;
+}
+
+.map-frame.is-picking #map {
+  cursor: crosshair;
+}
+
+.custom-marker {
+  width: 14px;
+  height: 14px;
+  background: #2f6f4f;
+  transform: rotate(45deg);
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
 }
 
 .saved-list-item {

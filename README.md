@@ -47,6 +47,9 @@ A web app that helps you decide where to eat for lunch or dinner when you're ind
 | Two pick modes | `/api/pick` vs. list click |
 | Save want-to-visit / visited lists | `/lists` page + SQLite in `data/zaha_picks.db` |
 | Full cuisine & address on save | `app/enrich.py` + Nominatim reverse geocode |
+| Manual map location (no GPS) | Address search, click map, or optional GPS → SQLite |
+| Add your own restaurants | `custom_restaurants` table in SQLite |
+| Wide-radius name search | `GET /api/search` (~50 mi, separate from filter radius) |
 
 ---
 
@@ -61,6 +64,7 @@ A web app that helps you decide where to eat for lunch or dinner when you're ind
 | **Uvicorn** | ASGI server | Standard way to run FastAPI locally |
 | **httpx** | HTTP client | Async requests to Overpass API |
 | **Jinja2** | HTML templates | Serves the page from `templates/index.html` |
+| **SQLite** | Local database | Zero-setup persistence for location, lists, and custom places |
 
 ### Frontend (browser)
 
@@ -75,8 +79,9 @@ A web app that helps you decide where to eat for lunch or dinner when you're ind
 | Service | Used for |
 |---|---|
 | **OpenStreetMap / Overpass** | Restaurant data |
+| **Nominatim** | Forward + reverse geocoding (addresses ↔ coordinates) |
 | **CARTO tiles** | Light map background |
-| **Browser Geolocation** | User location |
+| **Browser Geolocation** | Optional GPS location (not required) |
 
 ---
 
@@ -91,8 +96,9 @@ This is a **Python-based app** because:
 **JavaScript is still used for:**
 
 - **Leaflet** — interactive pan/zoom map (no practical Python-only alternative in the browser)
-- **Geolocation** — browser permission API
+- **Geolocation** — optional browser permission API (manual location is the default path)
 - **Radius animation** — smooth circle updates on the map
+- **Map click modes** — set your location or place a custom restaurant on the map
 
 That's typically ~200 lines in `static/map.js` vs. hundreds of lines of business logic in Python.
 
@@ -107,12 +113,26 @@ zaha-picks/
 │   ├── main.py          # FastAPI routes + page render
 │   ├── overpass.py      # Fetch & normalize OSM restaurants
 │   ├── filters.py       # Cuisine, hours, distance helpers
-│   └── constants.py     # Fallback location, cuisine aliases
+│   ├── constants.py     # Fallback location, cuisine aliases
+│   ├── database.py      # SQLite: lists, location, custom places
+│   ├── custom_places.py # Merge/filter user-added restaurants
+│   ├── geocode.py       # Nominatim forward + reverse geocoding
+│   ├── enrich.py        # Fill in cuisine/address on save
+│   └── yelp.py          # Optional Yelp Fusion lookups
 ├── templates/
-│   └── index.html       # Page layout (Jinja2)
+│   ├── index.html       # Home page (Jinja2)
+│   └── lists.html       # Want to visit / Visited page
 ├── static/
 │   ├── style.css        # All visual design
-│   └── map.js           # Leaflet map + calls Python API
+│   ├── map.js           # Leaflet map + API calls
+│   ├── lists-storage.js # Client cache for saved lists
+│   └── saved-markers.js # Star/circle markers on map
+├── tests/
+│   ├── test_search.py
+│   ├── test_lists_api.py
+│   └── test_location_and_custom.py
+├── data/
+│   └── zaha_picks.db    # Created on first run (SQLite)
 ├── requirements.txt
 ├── README.md
 └── .gitignore
@@ -254,6 +274,11 @@ Copy the original CSS unchanged. `static/map.js` only:
 | Open now filter | `app/filters.py` | `is_open_for_meal()` |
 | Map + radius animation | `static/map.js` | Leaflet |
 | Soft map fade | `static/style.css` | `.map-fade-*` |
+| Manual location | `static/map.js`, `app/database.py` | `GET/PUT /api/location`, `GET /api/geocode` |
+| Custom restaurants | `app/custom_places.py`, `app/database.py` | `POST /api/custom-restaurants` |
+| Wide-radius search | `app/main.py`, `static/map.js` | `GET /api/search` |
+| Saved lists | `app/database.py`, `templates/lists.html` | `/lists` + `/api/lists/*` |
+| Loading indicator | `static/map.js`, `templates/index.html` | Bottom loading bar |
 
 ---
 
@@ -271,6 +296,43 @@ GET /api/restaurants?lat=40.42&lng=-86.90&radius_meters=1609&cuisine=any&meal=lu
 
 ```
 GET /api/pick?lat=40.42&lng=-86.90&radius_meters=1609&cuisine=italian&meal=dinner&open_now=true
+```
+
+**Wide-radius search** (ignores meal/cuisine/radius filters)
+
+```
+GET /api/search?lat=40.42&lng=-86.90&q=pizza
+```
+
+**Saved map location**
+
+```
+GET /api/location
+PUT /api/location   # body: { "lat", "lng", "label", "source" }
+```
+
+**Address lookup** (for manual location)
+
+```
+GET /api/geocode?q=West+Lafayette+IN
+```
+
+**Custom restaurants** (places you add manually)
+
+```
+GET /api/custom-restaurants
+POST /api/custom-restaurants   # body: { "name", "lat", "lng", "cuisine", "address", "notes" }
+DELETE /api/custom-restaurants/{id}
+```
+
+**Saved lists**
+
+```
+GET /api/lists
+POST /api/lists/want
+POST /api/lists/visited
+DELETE /api/lists/want/{id}
+DELETE /api/lists/visited/{id}
 ```
 
 **Interactive API docs** (built into FastAPI): `http://127.0.0.1:8000/docs`
@@ -323,9 +385,44 @@ cp .env.example .env
 
 Restart the server after saving `.env`. When you select a restaurant, the app calls `/api/yelp` to resolve the exact `yelp.com/biz/...` URL.
 
+### Local persistence (SQLite)
+
+All persistent data lives in **`data/zaha_picks.db`** — a single SQLite file created automatically on first run. No database server to install or run.
+
+| Table | What it stores |
+|---|---|
+| `user_settings` | Saved map location (`map_location` key) |
+| `custom_restaurants` | Places you add manually via the UI |
+| `saved_restaurants` | Want-to-visit and visited lists |
+| `geocode_cache` | Cached address lookups from Nominatim |
+
+**Why SQLite?** Zero setup, very low resource use, and perfect for a personal local app. Back up `data/zaha_picks.db` to keep your location, custom places, and lists.
+
+### Manual location
+
+GPS is **optional**. On load, the app restores your last saved location from SQLite (or falls back to West Lafayette).
+
+Three ways to set your location:
+
+1. **Set location** — type an address or city, then search (Nominatim geocoding)
+2. **Click map** — click anywhere on the map to place your pin
+3. **Use GPS** — only when you want browser geolocation
+
+Your location is saved automatically and used for radius search, pick, and browse.
+
+### Add your own restaurants
+
+Use the **Add a place** panel to save restaurants that may not appear in OpenStreetMap:
+
+1. Enter a name (required) and optional cuisine/address
+2. Click **Click map** and tap where the place is
+3. Click **Save place**
+
+Custom places are stored in SQLite, shown as **green markers** on the map, and included in pick/browse/search results within range.
+
 ### My Lists (persistent storage)
 
-Want-to-visit and visited restaurants are stored in a **SQLite database** at `data/zaha_picks.db` (created automatically on first run). Lists survive page reloads and browser restarts as long as the server and database file remain on the same machine.
+Want-to-visit and visited restaurants are stored in the same SQLite database. Lists survive page reloads and browser restarts as long as the server and database file remain on the same machine.
 
 When you pick or save a restaurant, the backend fills in missing **cuisine** (from OSM tags and name) and **address** (from OSM tags or Nominatim reverse geocoding).
 
@@ -338,7 +435,9 @@ When you pick or save a restaurant, the backend fills in missing **cuisine** (fr
 | `ModuleNotFoundError: app` | Run uvicorn from project root; activate venv |
 | Map is blank | Check Leaflet CSS CDN + `#map` height in CSS |
 | No restaurants | Widen radius; check `/api/restaurants` in browser or `/docs` |
-| Geolocation blocked | Allow location or use fallback (West Lafayette) |
+| Geolocation blocked | Set location manually via address or click map (GPS is optional) |
+| Location not saved after restart | Confirm `data/zaha_picks.db` exists and the server can write to `data/` |
+| Custom place not in pick results | Check it is within your selected radius from your saved location |
 | Yelp opens search, not the restaurant page | Add `YELP_API_KEY` to `.env` (see above) |
 | Overpass timeout | Wait and retry; reduce query frequency |
 | Saved lists empty after deploy | SQLite file is local to the server; back up `data/zaha_picks.db` or migrate to hosted DB |
@@ -350,6 +449,7 @@ When you pick or save a restaurant, the backend fills in missing **cuisine** (fr
 ### Easy
 - Add cuisines in `templates/index.html` + `CUISINE_ALIASES` in `constants.py`
 - Save last filters in `localStorage` from `map.js`
+- Add a "My Places" page to edit/delete custom restaurants
 
 ### Medium
 - Deploy on [Render](https://render.com) or [Railway](https://railway.app) with `uvicorn app.main:app --host 0.0.0.0 --port $PORT` (mount persistent disk for `data/`)
@@ -378,6 +478,7 @@ When you pick or save a restaurant, the backend fills in missing **cuisine** (fr
 - A **Jinja2** HTML template + **CSS** for the same UI
 - A thin **Leaflet** JavaScript layer for the map
 - **OpenStreetMap** data via **Overpass**
+- **SQLite** for local persistence (location, custom places, saved lists)
 
 Run `uvicorn app.main:app --reload` and build from there.
 

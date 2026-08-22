@@ -10,6 +10,10 @@ const state = {
   openNowOnly: true,
   userLat: null,
   userLng: null,
+  locationLabel: "",
+  mapMode: null,
+  customDraftLat: null,
+  customDraftLng: null,
   nearbyRestaurants: [],
   searchResults: null,
   activeSearchQuery: "",
@@ -19,6 +23,7 @@ const state = {
 let map;
 let radiusCircle;
 let userMarker;
+let customDraftMarker;
 let restaurantMarkers = [];
 let loadingCount = 0;
 
@@ -43,6 +48,20 @@ const searchValidation = document.getElementById("search-validation");
 const searchResultsPanel = document.getElementById("search-results-panel");
 const loadingBar = document.getElementById("loading-bar");
 const loadingBarLabel = document.getElementById("loading-bar-label");
+const locationLabel = document.getElementById("location-label");
+const locationAddress = document.getElementById("location-address");
+const locationValidation = document.getElementById("location-validation");
+const btnSetAddress = document.getElementById("btn-set-address");
+const btnPickLocation = document.getElementById("btn-pick-location");
+const btnUseGps = document.getElementById("btn-use-gps");
+const customName = document.getElementById("custom-name");
+const customCuisine = document.getElementById("custom-cuisine");
+const customAddress = document.getElementById("custom-address");
+const customCoords = document.getElementById("custom-coords");
+const customValidation = document.getElementById("custom-validation");
+const btnPlaceCustom = document.getElementById("btn-place-custom");
+const btnSaveCustom = document.getElementById("btn-save-custom");
+const mapFrame = document.querySelector(".map-frame");
 
 function initMap() {
   map = L.map("map", {
@@ -64,6 +83,8 @@ function initMap() {
     fillOpacity: 1,
     weight: 2,
   }).addTo(map);
+
+  map.on("click", handleMapClick);
 }
 
 function setStatus(message) {
@@ -93,6 +114,96 @@ async function withLoading(label, task) {
     return await task();
   } finally {
     hideLoading();
+  }
+}
+
+function setLocationValidation(message = "") {
+  if (!locationValidation) return;
+  if (!message) {
+    locationValidation.hidden = true;
+    locationValidation.textContent = "";
+    return;
+  }
+  locationValidation.hidden = false;
+  locationValidation.textContent = message;
+}
+
+function setCustomValidation(message = "") {
+  if (!customValidation) return;
+  if (!message) {
+    customValidation.hidden = true;
+    customValidation.textContent = "";
+    return;
+  }
+  customValidation.hidden = false;
+  customValidation.textContent = message;
+}
+
+function updateLocationLabel(label) {
+  state.locationLabel = label;
+  if (locationLabel) {
+    locationLabel.textContent = label;
+  }
+}
+
+function setMapMode(mode) {
+  state.mapMode = mode;
+  if (mapFrame) {
+    mapFrame.classList.toggle("is-picking", Boolean(mode));
+  }
+  if (btnPickLocation) {
+    btnPickLocation.classList.toggle("active", mode === "set-location");
+  }
+  if (btnPlaceCustom) {
+    btnPlaceCustom.classList.toggle("active", mode === "add-restaurant");
+  }
+}
+
+function updateCustomCoordsDisplay() {
+  if (!customCoords) return;
+  if (state.customDraftLat == null || state.customDraftLng == null) {
+    customCoords.textContent = "Click the map to place this spot.";
+    return;
+  }
+  customCoords.textContent = `Placed at ${state.customDraftLat.toFixed(5)}, ${state.customDraftLng.toFixed(5)}`;
+}
+
+function renderCustomDraftMarker() {
+  if (customDraftMarker) {
+    customDraftMarker.remove();
+    customDraftMarker = null;
+  }
+  if (state.customDraftLat == null || state.customDraftLng == null || !map) {
+    return;
+  }
+
+  customDraftMarker = L.marker([state.customDraftLat, state.customDraftLng], {
+    icon: L.divIcon({
+      className: "custom-draft-marker",
+      html: "<span class=\"custom-marker\" aria-hidden=\"true\"></span>",
+      iconSize: [18, 18],
+      iconAnchor: [9, 9],
+    }),
+    zIndexOffset: 1300,
+  })
+    .addTo(map)
+    .bindPopup("New place");
+}
+
+async function persistLocation(lat, lng, label, source) {
+  try {
+    const response = await fetch("/api/location", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat, lng, label, source }),
+    });
+    if (!response.ok) {
+      throw new Error("Could not save location.");
+    }
+    return await response.json();
+  } catch (error) {
+    console.error(error);
+    return null;
   }
 }
 
@@ -195,15 +306,29 @@ function renderMapMarkers() {
   clearRestaurantMarkers();
 
   getMapRestaurants().forEach((place) => {
-    const marker = L.circleMarker([place.lat, place.lng], {
-      radius: state.selected?.id === place.id ? 8 : 5,
-      color: state.selected?.id === place.id ? "#1a1a1a" : "#888",
-      fillColor: state.selected?.id === place.id ? "#1a1a1a" : "#bbb",
-      fillOpacity: 0.9,
-      weight: 1,
-    })
+    const isSelected = state.selected?.id === place.id;
+    const isCustom = Boolean(place.custom);
+    const markerOptions = isCustom
+      ? {
+          radius: isSelected ? 9 : 7,
+          color: "#2f6f4f",
+          fillColor: isSelected ? "#2f6f4f" : "#6fae8d",
+          fillOpacity: 0.95,
+          weight: 2,
+        }
+      : {
+          radius: isSelected ? 8 : 5,
+          color: isSelected ? "#1a1a1a" : "#888",
+          fillColor: isSelected ? "#1a1a1a" : "#bbb",
+          fillOpacity: 0.9,
+          weight: 1,
+        };
+
+    const marker = L.circleMarker([place.lat, place.lng], markerOptions)
       .addTo(map)
-      .bindPopup(`<strong>${place.name}</strong><br>${place.distance_label} away`);
+      .bindPopup(
+        `<strong>${place.name}</strong><br>${place.distance_label} away${isCustom ? "<br><em>Your place</em>" : ""}`
+      );
 
     marker.on("click", () => selectRestaurant(place));
     restaurantMarkers.push(marker);
@@ -566,9 +691,11 @@ function showNearbyMatches(scrollIntoView = false) {
   }
 }
 
-function setUserLocation(lat, lng, label) {
+function setUserLocation(lat, lng, label, source = "manual", refresh = true) {
   state.userLat = lat;
   state.userLng = lng;
+  updateLocationLabel(label);
+  setLocationValidation("");
 
   if (userMarker) userMarker.remove();
   userMarker = L.circleMarker([lat, lng], {
@@ -579,41 +706,164 @@ function setUserLocation(lat, lng, label) {
     weight: 2,
   })
     .addTo(map)
-    .bindPopup("You are here");
+    .bindPopup(label || "Your location");
 
   map.setView([lat, lng], 14);
   updateRadiusCircle(false);
-  setStatus(label);
-  refreshRestaurants();
+  setStatus(label ? `Location set: ${label}` : "Location updated.");
+  persistLocation(lat, lng, label, source);
+
+  if (refresh) {
+    refreshRestaurants();
+  }
+}
+
+async function loadSavedLocation() {
+  try {
+    const response = await fetch("/api/location");
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error("Could not load saved location.");
+    }
+    setUserLocation(
+      payload.lat,
+      payload.lng,
+      payload.label,
+      payload.source || "manual",
+      true
+    );
+  } catch (error) {
+    setUserLocation(
+      FALLBACK_CENTER[0],
+      FALLBACK_CENTER[1],
+      "West Lafayette (default)",
+      "default",
+      true
+    );
+  }
 }
 
 function locateUser() {
   if (!navigator.geolocation) {
-    setUserLocation(
-      FALLBACK_CENTER[0],
-      FALLBACK_CENTER[1],
-      "Geolocation unavailable — showing West Lafayette."
-    );
+    setLocationValidation("Geolocation is not available in this browser.");
     return;
   }
 
+  setStatus("Requesting GPS location…");
   navigator.geolocation.getCurrentPosition(
     (position) => {
       setUserLocation(
         position.coords.latitude,
         position.coords.longitude,
-        "Location found. Adjust filters and pick a spot."
+        "Current GPS location",
+        "gps"
       );
     },
     () => {
-      setUserLocation(
-        FALLBACK_CENTER[0],
-        FALLBACK_CENTER[1],
-        "Location blocked — showing West Lafayette. Enable location for best results."
-      );
+      setLocationValidation("GPS access was blocked. Set your location manually instead.");
+      setStatus("GPS blocked — set your location with an address or by clicking the map.");
     },
     { enableHighAccuracy: true, timeout: 10000 }
   );
+}
+
+async function setLocationFromAddress() {
+  if (!locationAddress) return;
+
+  const query = locationAddress.value.trim();
+  setLocationValidation("");
+  if (query.length < 2) {
+    setLocationValidation("Enter at least 2 characters to search for a location.");
+    locationAddress.focus();
+    return;
+  }
+
+  try {
+    await withLoading("Looking up address…", async () => {
+      const params = new URLSearchParams({ q: query });
+      const response = await fetch(`/api/geocode?${params}`);
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail || "No locations found for that search.");
+      }
+      const match = payload.results[0];
+      setUserLocation(match.lat, match.lng, match.label, "address");
+      setMapMode(null);
+    });
+  } catch (error) {
+    setLocationValidation(error.message);
+  }
+}
+
+function handleMapClick(event) {
+  if (!state.mapMode) return;
+
+  const { lat, lng } = event.latlng;
+
+  if (state.mapMode === "set-location") {
+    setUserLocation(lat, lng, "Map location", "map");
+    setMapMode(null);
+    return;
+  }
+
+  if (state.mapMode === "add-restaurant") {
+    state.customDraftLat = lat;
+    state.customDraftLng = lng;
+    updateCustomCoordsDisplay();
+    renderCustomDraftMarker();
+    setMapMode(null);
+    setStatus("Place marker set. Fill in the name and save.");
+  }
+}
+
+async function saveCustomRestaurant() {
+  setCustomValidation("");
+
+  const name = customName?.value.trim() || "";
+  if (!name) {
+    setCustomValidation("Enter a name for this place.");
+    customName?.focus();
+    return;
+  }
+  if (state.customDraftLat == null || state.customDraftLng == null) {
+    setCustomValidation("Click the map to place this restaurant first.");
+    return;
+  }
+
+  try {
+    await withLoading("Saving your place…", async () => {
+      const response = await fetch("/api/custom-restaurants", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          lat: state.customDraftLat,
+          lng: state.customDraftLng,
+          cuisine: customCuisine?.value.trim() || "",
+          address: customAddress?.value.trim() || "",
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail || "Could not save this place.");
+      }
+
+      if (customName) customName.value = "";
+      if (customCuisine) customCuisine.value = "";
+      if (customAddress) customAddress.value = "";
+      state.customDraftLat = null;
+      state.customDraftLng = null;
+      updateCustomCoordsDisplay();
+      renderCustomDraftMarker();
+      await refreshRestaurants();
+      if (payload.place) {
+        await selectRestaurant(payload.place);
+      }
+      setStatus(`Saved ${name} to your local database.`);
+    });
+  } catch (error) {
+    setCustomValidation(error.message);
+  }
 }
 
 function bindControls() {
@@ -675,6 +925,46 @@ function bindControls() {
   btnWantVisit.addEventListener("click", handleWantToVisit);
   btnMarkVisited.addEventListener("click", handleMarkVisited);
 
+  if (btnSetAddress) {
+    btnSetAddress.addEventListener("click", setLocationFromAddress);
+  }
+  if (locationAddress) {
+    locationAddress.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        setLocationFromAddress();
+      }
+    });
+  }
+  if (btnPickLocation) {
+    btnPickLocation.addEventListener("click", () => {
+      const nextMode = state.mapMode === "set-location" ? null : "set-location";
+      setMapMode(nextMode);
+      setStatus(
+        nextMode
+          ? "Click anywhere on the map to set your location."
+          : "Location picking cancelled."
+      );
+    });
+  }
+  if (btnUseGps) {
+    btnUseGps.addEventListener("click", locateUser);
+  }
+  if (btnPlaceCustom) {
+    btnPlaceCustom.addEventListener("click", () => {
+      const nextMode = state.mapMode === "add-restaurant" ? null : "add-restaurant";
+      setMapMode(nextMode);
+      setStatus(
+        nextMode
+          ? "Click the map where this place should go."
+          : "Place picking cancelled."
+      );
+    });
+  }
+  if (btnSaveCustom) {
+    btnSaveCustom.addEventListener("click", saveCustomRestaurant);
+  }
+
   window.addEventListener("zaha-lists-updated", () => {
     window.ZahaSavedMarkers.renderSavedMarkers(map, window.ZahaLists.getCachedLists());
     if (state.selected) updateSaveButtons(state.selected);
@@ -688,5 +978,5 @@ bindControls();
   await window.ZahaLists.ensureReady();
   updateResultsPanelVisibility();
   window.ZahaSavedMarkers.renderSavedMarkers(map, window.ZahaLists.getCachedLists());
-  locateUser();
+  await loadSavedLocation();
 })();

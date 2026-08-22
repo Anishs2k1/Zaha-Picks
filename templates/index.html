@@ -21,6 +21,34 @@
       <main class="main">
         <aside class="panel panel-left">
           <section class="card">
+            <h2>Your location</h2>
+            <p class="hint">Set where you are — saved locally in SQLite. No GPS required.</p>
+            <p id="location-label" class="location-label">Loading saved location…</p>
+
+            <label class="field">
+              <span>Address or city</span>
+              <input
+                type="text"
+                id="location-address"
+                placeholder="e.g. West Lafayette, IN"
+                autocomplete="off"
+              />
+            </label>
+            <div class="location-actions">
+              <button type="button" id="btn-set-address" class="btn btn-primary btn-compact">
+                Set location
+              </button>
+              <button type="button" id="btn-pick-location" class="btn btn-secondary btn-compact">
+                Click map
+              </button>
+              <button type="button" id="btn-use-gps" class="btn btn-secondary btn-compact">
+                Use GPS
+              </button>
+            </div>
+            <p id="location-validation" class="search-validation" hidden></p>
+          </section>
+
+          <section class="card">
             <h2>Your choices</h2>
             <p class="hint">Pick these first — we'll only show places that match.</p>
 
@@ -81,6 +109,38 @@
               <strong>Browse matches</strong> — see the list and choose yourself.
             </p>
           </section>
+
+          <section class="card">
+            <h2>Add a place</h2>
+            <p class="hint">Save your own spots — stored in the local SQLite database.</p>
+
+            <label class="field">
+              <span>Name</span>
+              <input type="text" id="custom-name" placeholder="Restaurant name" maxlength="120" />
+            </label>
+
+            <label class="field">
+              <span>Cuisine (optional)</span>
+              <input type="text" id="custom-cuisine" placeholder="e.g. Thai" maxlength="80" />
+            </label>
+
+            <label class="field">
+              <span>Address (optional)</span>
+              <input type="text" id="custom-address" placeholder="Street or notes" maxlength="200" />
+            </label>
+
+            <p id="custom-coords" class="custom-coords">Click the map to place this spot.</p>
+
+            <div class="location-actions">
+              <button type="button" id="btn-place-custom" class="btn btn-secondary btn-compact">
+                Click map
+              </button>
+              <button type="button" id="btn-save-custom" class="btn btn-primary btn-compact">
+                Save place
+              </button>
+            </div>
+            <p id="custom-validation" class="search-validation" hidden></p>
+          </section>
         </aside>
 
         <section class="map-section">
@@ -91,10 +151,11 @@
             <div class="map-fade map-fade-left"></div>
             <div class="map-fade map-fade-right"></div>
           </div>
-          <div class="map-status" id="map-status">Getting your location…</div>
+          <div class="map-status" id="map-status">Loading saved location…</div>
           <div class="map-legend">
             <span><span class="legend-star">★</span> Want to visit</span>
             <span><span class="legend-circle"></span> Visited</span>
+            <span><span class="legend-custom">◆</span> Your places</span>
           </div>
         </section>
 

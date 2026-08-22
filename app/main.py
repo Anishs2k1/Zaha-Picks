@@ -16,9 +16,21 @@ from app.constants import (
     METERS_PER_MILE,
     SEARCH_RADIUS_METERS,
 )
+from app.custom_places import filter_custom_places, row_to_place
 from app.filters import filter_by_search
-from app.database import get_lists, init_db, remove_place, save_place
+from app.database import (
+    add_custom_restaurant,
+    delete_custom_restaurant,
+    get_custom_restaurants,
+    get_lists,
+    get_saved_location,
+    init_db,
+    remove_place,
+    save_location,
+    save_place,
+)
 from app.enrich import enrich_restaurant
+from app.geocode import forward_geocode
 from app.overpass import fetch_restaurants
 from app.yelp import resolve_yelp_business_url
 
@@ -48,6 +60,45 @@ class RestaurantPayload(BaseModel):
 class LocalListsMigration(BaseModel):
     wantToVisit: list[dict] = Field(default_factory=list)
     visited: list[dict] = Field(default_factory=list)
+
+
+class LocationPayload(BaseModel):
+    lat: float = Field(..., ge=-90, le=90)
+    lng: float = Field(..., ge=-180, le=180)
+    label: str = Field("", max_length=200)
+    source: str = Field("manual", pattern="^(manual|gps|map|address)$")
+
+
+class CustomRestaurantPayload(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    lat: float = Field(..., ge=-90, le=90)
+    lng: float = Field(..., ge=-180, le=180)
+    cuisine: str = Field("", max_length=80)
+    address: str = Field("", max_length=200)
+    notes: str = Field("", max_length=300)
+
+
+def merge_custom_places(
+    osm_places: list[dict],
+    user_lat: float,
+    user_lng: float,
+    radius_meters: int,
+    cuisine: str,
+) -> list[dict]:
+    custom_rows = get_custom_restaurants()
+    custom_places = filter_custom_places(
+        custom_rows,
+        user_lat,
+        user_lng,
+        radius_meters,
+        cuisine,
+    )
+    merged = {place["id"]: place for place in osm_places}
+    for place in custom_places:
+        merged[place["id"]] = place
+    places = list(merged.values())
+    places.sort(key=lambda item: item["distance"])
+    return places
 
 
 @app.on_event("startup")
@@ -136,6 +187,60 @@ async def enrich_restaurant_api(restaurant: RestaurantPayload):
     return await enrich_restaurant(restaurant.model_dump())
 
 
+@app.get("/api/location")
+async def location_api():
+    saved = get_saved_location()
+    if saved:
+        return saved
+    return {
+        "lat": FALLBACK_LAT,
+        "lng": FALLBACK_LNG,
+        "label": "West Lafayette (default)",
+        "source": "default",
+    }
+
+
+@app.put("/api/location")
+async def save_location_api(payload: LocationPayload):
+    return save_location(payload.lat, payload.lng, payload.label, payload.source)
+
+
+@app.get("/api/geocode")
+async def geocode_search(q: str = Query(..., min_length=2, max_length=120)):
+    results = await forward_geocode(q)
+    if not results:
+        raise HTTPException(status_code=404, detail="No locations found for that search.")
+    return {"results": results}
+
+
+@app.get("/api/custom-restaurants")
+async def custom_restaurants_api():
+    return {"restaurants": get_custom_restaurants()}
+
+
+@app.post("/api/custom-restaurants")
+async def create_custom_restaurant(payload: CustomRestaurantPayload):
+    saved = add_custom_restaurant(
+        name=payload.name,
+        lat=payload.lat,
+        lng=payload.lng,
+        cuisine=payload.cuisine,
+        address=payload.address,
+        notes=payload.notes,
+    )
+    place = row_to_place(saved, payload.lat, payload.lng)
+    place["distance"] = 0
+    place["distance_label"] = "0.0 mi"
+    return {"restaurant": saved, "place": place}
+
+
+@app.delete("/api/custom-restaurants/{place_id:path}")
+async def remove_custom_restaurant(place_id: str):
+    if not delete_custom_restaurant(place_id):
+        raise HTTPException(status_code=404, detail="Custom restaurant not found.")
+    return {"restaurants": get_custom_restaurants()}
+
+
 @app.get("/api/restaurants")
 async def restaurants(
     lat: float = Query(...),
@@ -154,6 +259,7 @@ async def restaurants(
             meal=meal,
             open_now_only=open_now,
         )
+        places = merge_custom_places(places, lat, lng, radius_meters, cuisine)
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail="Could not load nearby restaurants.") from exc
     except Exception as exc:
@@ -184,7 +290,16 @@ async def search_restaurants(
             meal="lunch",
             open_now_only=False,
         )
-        places = filter_by_search(places, q)
+        custom_rows = get_custom_restaurants()
+        custom_places = filter_custom_places(
+            custom_rows,
+            lat,
+            lng,
+            SEARCH_RADIUS_METERS,
+            "any",
+        )
+        places = filter_by_search(places + custom_places, q)
+        places.sort(key=lambda item: item["distance"])
         total_matches = len(places)
         places = places[:MAX_SEARCH_RESULTS]
     except httpx.HTTPError as exc:
@@ -226,6 +341,7 @@ async def pick_random(
             meal=meal,
             open_now_only=open_now,
         )
+        places = merge_custom_places(places, lat, lng, radius_meters, cuisine)
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail="Could not load nearby restaurants.") from exc
 
@@ -233,7 +349,10 @@ async def pick_random(
         raise HTTPException(status_code=404, detail="No restaurants match your filters yet.")
 
     choice = random.choice(places)
-    choice = await enrich_restaurant(choice)
+    if choice.get("custom"):
+        choice = dict(choice)
+    else:
+        choice = await enrich_restaurant(choice)
     yelp = await resolve_yelp_business_url(
         choice["name"],
         choice["lat"],

@@ -20,7 +20,7 @@
 
       <main class="main">
         <aside class="panel panel-left">
-          <section class="card">
+          <section class="card location-card" id="location-card">
             <h2>Your location</h2>
             <p class="hint">Set where you are — saved locally in SQLite. No GPS required.</p>
             <p id="location-label" class="location-label">Loading saved location…</p>
@@ -30,13 +30,18 @@
               <input
                 type="text"
                 id="location-address"
-                placeholder="e.g. West Lafayette, IN"
+                value="{{ default_location_address }}"
+                placeholder="e.g. 32 Auburn Street, San Francisco, California"
                 autocomplete="off"
               />
             </label>
+            <p id="location-input-hint" class="hint location-input-hint">
+              Press Enter or click Set location to search.
+            </p>
             <div class="location-actions">
               <button type="button" id="btn-set-address" class="btn btn-primary btn-compact">
-                Set location
+                <span class="btn-spinner" hidden aria-hidden="true"></span>
+                <span class="btn-label">Set location</span>
               </button>
               <button type="button" id="btn-pick-location" class="btn btn-secondary btn-compact">
                 Click map
@@ -45,6 +50,10 @@
                 Use GPS
               </button>
             </div>
+            <p id="location-loading" class="location-loading" aria-live="polite">
+              <span class="location-loading-spinner" aria-hidden="true"></span>
+              <span id="location-loading-label">Looking up address…</span>
+            </p>
             <p id="location-validation" class="search-validation" hidden></p>
           </section>
 
@@ -229,6 +238,8 @@
       window.ZAHA_PICKS = {
         fallbackLat: {{ fallback_lat }},
         fallbackLng: {{ fallback_lng }},
+        defaultLocationAddress: {{ default_location_address | tojson }},
+        defaultLocationLabel: {{ default_location_label | tojson }},
       };
     </script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

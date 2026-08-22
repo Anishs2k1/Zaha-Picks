@@ -54,6 +54,12 @@ const locationValidation = document.getElementById("location-validation");
 const btnSetAddress = document.getElementById("btn-set-address");
 const btnPickLocation = document.getElementById("btn-pick-location");
 const btnUseGps = document.getElementById("btn-use-gps");
+const locationLoading = document.getElementById("location-loading");
+const locationLoadingLabel = document.getElementById("location-loading-label");
+const locationInputHint = document.getElementById("location-input-hint");
+const locationCard = document.getElementById("location-card");
+const btnSetAddressSpinner = btnSetAddress?.querySelector(".btn-spinner");
+const btnSetAddressLabel = btnSetAddress?.querySelector(".btn-label");
 const customName = document.getElementById("custom-name");
 const customCuisine = document.getElementById("custom-cuisine");
 const customAddress = document.getElementById("custom-address");
@@ -126,6 +132,59 @@ function setLocationValidation(message = "") {
   }
   locationValidation.hidden = false;
   locationValidation.textContent = message;
+}
+
+function setAddressLoading(isLoading, label = "Looking up address…") {
+  if (btnSetAddress) {
+    btnSetAddress.disabled = isLoading;
+    btnSetAddress.classList.toggle("is-loading", isLoading);
+  }
+  if (btnSetAddressSpinner) {
+    btnSetAddressSpinner.hidden = !isLoading;
+  }
+  if (btnSetAddressLabel) {
+    btnSetAddressLabel.textContent = isLoading ? "Setting…" : "Set location";
+  }
+  if (btnPickLocation) {
+    btnPickLocation.disabled = isLoading;
+  }
+  if (btnUseGps) {
+    btnUseGps.disabled = isLoading;
+  }
+  if (locationAddress) {
+    locationAddress.disabled = isLoading;
+    locationAddress.classList.toggle("is-loading", isLoading);
+  }
+  if (locationCard) {
+    locationCard.classList.toggle("is-loading", isLoading);
+  }
+  if (locationLoading) {
+    locationLoading.classList.toggle("is-visible", isLoading);
+  }
+  if (locationLoadingLabel) {
+    locationLoadingLabel.textContent = label;
+  }
+  if (locationInputHint) {
+    locationInputHint.hidden = isLoading;
+  }
+  if (locationLabel && isLoading) {
+    locationLabel.textContent = label;
+  }
+  if (mapStatus && isLoading) {
+    mapStatus.textContent = label;
+  }
+}
+
+function updateLocationInputHint() {
+  if (!locationInputHint || !locationAddress) return;
+  if (locationAddress.disabled) return;
+
+  const query = locationAddress.value.trim();
+  if (query.length >= 2) {
+    locationInputHint.textContent = "Press Enter or click Set location to search.";
+  } else {
+    locationInputHint.textContent = "Type an address, then press Enter or Set location.";
+  }
 }
 
 function setCustomValidation(message = "") {
@@ -691,7 +750,7 @@ function showNearbyMatches(scrollIntoView = false) {
   }
 }
 
-function setUserLocation(lat, lng, label, source = "manual", refresh = true) {
+async function setUserLocation(lat, lng, label, source = "manual", refresh = true) {
   state.userLat = lat;
   state.userLng = lng;
   updateLocationLabel(label);
@@ -714,7 +773,7 @@ function setUserLocation(lat, lng, label, source = "manual", refresh = true) {
   persistLocation(lat, lng, label, source);
 
   if (refresh) {
-    refreshRestaurants();
+    await refreshRestaurants();
   }
 }
 
@@ -725,7 +784,7 @@ async function loadSavedLocation() {
     if (!response.ok) {
       throw new Error("Could not load saved location.");
     }
-    setUserLocation(
+    await setUserLocation(
       payload.lat,
       payload.lng,
       payload.label,
@@ -733,10 +792,10 @@ async function loadSavedLocation() {
       true
     );
   } catch (error) {
-    setUserLocation(
+    await setUserLocation(
       FALLBACK_CENTER[0],
       FALLBACK_CENTER[1],
-      "West Lafayette (default)",
+      window.ZAHA_PICKS.defaultLocationLabel || "San Francisco (default)",
       "default",
       true
     );
@@ -778,6 +837,8 @@ async function setLocationFromAddress() {
     return;
   }
 
+  setAddressLoading(true, "Looking up address…");
+
   try {
     await withLoading("Looking up address…", async () => {
       const params = new URLSearchParams({ q: query });
@@ -786,12 +847,20 @@ async function setLocationFromAddress() {
       if (!response.ok) {
         throw new Error(payload.detail || "No locations found for that search.");
       }
+
+      setAddressLoading(true, "Updating map and nearby spots…");
+      if (loadingBarLabel) {
+        loadingBarLabel.textContent = "Updating map and nearby spots…";
+      }
+
       const match = payload.results[0];
-      setUserLocation(match.lat, match.lng, match.label, "address");
+      await setUserLocation(match.lat, match.lng, match.label, "address");
       setMapMode(null);
     });
   } catch (error) {
     setLocationValidation(error.message);
+  } finally {
+    setAddressLoading(false);
   }
 }
 
@@ -801,8 +870,17 @@ function handleMapClick(event) {
   const { lat, lng } = event.latlng;
 
   if (state.mapMode === "set-location") {
-    setUserLocation(lat, lng, "Map location", "map");
-    setMapMode(null);
+    void (async () => {
+      setAddressLoading(true, "Updating map and nearby spots…");
+      try {
+        await withLoading("Updating map and nearby spots…", async () => {
+          await setUserLocation(lat, lng, "Map location", "map");
+          setMapMode(null);
+        });
+      } finally {
+        setAddressLoading(false);
+      }
+    })();
     return;
   }
 
@@ -935,6 +1013,7 @@ function bindControls() {
         setLocationFromAddress();
       }
     });
+    locationAddress.addEventListener("input", updateLocationInputHint);
   }
   if (btnPickLocation) {
     btnPickLocation.addEventListener("click", () => {
@@ -977,6 +1056,7 @@ bindControls();
 (async function bootstrap() {
   await window.ZahaLists.ensureReady();
   updateResultsPanelVisibility();
+  updateLocationInputHint();
   window.ZahaSavedMarkers.renderSavedMarkers(map, window.ZahaLists.getCachedLists());
   await loadSavedLocation();
 })();

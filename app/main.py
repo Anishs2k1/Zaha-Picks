@@ -10,8 +10,12 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
 from app.constants import (
+    DEFAULT_LOCATION_ADDRESS,
+    DEFAULT_LOCATION_LABEL,
     FALLBACK_LAT,
     FALLBACK_LNG,
+    LEGACY_FALLBACK_LAT,
+    LEGACY_FALLBACK_LNG,
     MAX_SEARCH_RESULTS,
     METERS_PER_MILE,
     SEARCH_RADIUS_METERS,
@@ -101,9 +105,24 @@ def merge_custom_places(
     return places
 
 
+def ensure_default_location() -> None:
+    saved = get_saved_location()
+    if saved is None:
+        save_location(FALLBACK_LAT, FALLBACK_LNG, DEFAULT_LOCATION_LABEL, "default")
+        return
+
+    is_legacy = (
+        abs(saved["lat"] - LEGACY_FALLBACK_LAT) < 0.0001
+        and abs(saved["lng"] - LEGACY_FALLBACK_LNG) < 0.0001
+    )
+    if is_legacy or saved.get("label") == "West Lafayette (default)":
+        save_location(FALLBACK_LAT, FALLBACK_LNG, DEFAULT_LOCATION_LABEL, "default")
+
+
 @app.on_event("startup")
 async def startup() -> None:
     init_db()
+    ensure_default_location()
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -114,6 +133,8 @@ async def index(request: Request):
         {
             "fallback_lat": FALLBACK_LAT,
             "fallback_lng": FALLBACK_LNG,
+            "default_location_address": DEFAULT_LOCATION_ADDRESS,
+            "default_location_label": DEFAULT_LOCATION_LABEL,
         },
     )
 
@@ -126,6 +147,8 @@ async def lists_page(request: Request):
         {
             "fallback_lat": FALLBACK_LAT,
             "fallback_lng": FALLBACK_LNG,
+            "default_location_address": DEFAULT_LOCATION_ADDRESS,
+            "default_location_label": DEFAULT_LOCATION_LABEL,
         },
     )
 
@@ -195,7 +218,7 @@ async def location_api():
     return {
         "lat": FALLBACK_LAT,
         "lng": FALLBACK_LNG,
-        "label": "West Lafayette (default)",
+        "label": DEFAULT_LOCATION_LABEL,
         "source": "default",
     }
 

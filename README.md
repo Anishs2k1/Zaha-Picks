@@ -400,7 +400,9 @@ All persistent data lives in **`data/zaha_picks.db`** — a single SQLite file c
 
 ### Manual location
 
-GPS is **optional**. On load, the app restores your last saved location from SQLite (or falls back to West Lafayette).
+GPS is **optional**. On load, the app restores your last saved location from SQLite (or falls back to **32 Auburn Street, San Francisco, CA**).
+
+When you set a location by address, the UI shows inline loading feedback (button spinner, highlighted location card, and status messages) while geocoding and refreshing nearby restaurants.
 
 Three ways to set your location:
 

@@ -178,6 +178,68 @@ body {
   color: #fff;
 }
 
+.btn.is-loading {
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.btn-spinner,
+.location-loading-spinner {
+  display: inline-block;
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: btn-spin 0.7s linear infinite;
+  vertical-align: -0.1em;
+  margin-right: 0.4rem;
+}
+
+.location-loading-spinner {
+  border-color: rgba(45, 45, 45, 0.15);
+  border-top-color: var(--accent);
+}
+
+@keyframes btn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.location-loading {
+  display: none;
+  align-items: center;
+  margin: 0.5rem 0 0.35rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.location-loading.is-visible {
+  display: flex;
+}
+
+.location-card.is-loading {
+  box-shadow: inset 0 0 0 2px rgba(45, 45, 45, 0.18);
+}
+
+.location-card.is-loading .location-label {
+  color: var(--accent);
+}
+
+.location-input-hint {
+  margin-top: -0.35rem;
+  margin-bottom: 0.65rem;
+}
+
+#location-address.is-loading {
+  background: #fafafa;
+  color: var(--muted);
+}
+
 .custom-coords {
   margin: 0 0 0.75rem;
   font-size: 0.85rem;
